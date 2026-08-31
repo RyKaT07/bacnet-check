@@ -3,16 +3,16 @@
 # requires-python = ">=3.10"
 # dependencies = ["BAC0>=2026.7.25"]
 # ///
-"""bacnet-check - uniwersalny webowy podglad urzadzen BACnet z profilami regul.
+"""bacnet-check - a general web viewer for BACnet devices, driven by rule profiles.
 
-Aplikacja jest ogolna: laczy sie z dowolnym urzadzeniem BACnet/IP, pokazuje
-punkty na zywo i pozwala zapisywac wartosci. Cala wiedza "co sprawdzac" siedzi
-w profilach (profiles/*.json): mapowanie nazw punktow na krotkie aliasy +
-reguly JS liczace "oczekiwane vs odczytane". VAV to tylko jeden z profili.
+The application itself is device-agnostic: it connects to any BACnet/IP device,
+shows its points live and lets you write values. All the knowledge of *what to
+check* lives in profiles (profiles/*.json): a mapping of point names to short
+aliases plus JS rules computing "expected vs read". VAV is just one profile.
 
-Tryby (uv sam ogarnia srodowisko - zaleznosci sa w naglowku powyzej):
-  uv run bacnet_check.py --sim [nazwa]          # symulator z sims/<nazwa>.py, bez sprzetu
-  uv run bacnet_check.py [--ip 192.168.1.10/24] # realny BACnet; urzadzenie wybierasz w UI
+Modes (uv builds the environment itself - dependencies are declared above):
+  uv run bacnet_check.py --sim [name]           # simulator from sims/<name>.py, no hardware
+  uv run bacnet_check.py [--ip 192.168.1.10/24] # real BACnet; pick the device in the UI
 
 UI: http://localhost:8342
 """
@@ -38,9 +38,9 @@ GENERATION = 0
 ARGS = None
 
 
-# ── symulowane urzadzenie: zwykly plik w sims/ (patrz sims/vav-nefryt.py) ─
-SIM = None          # zaladowany modul symulatora
-SIM_PARAMS = {}     # punkty zapisywalne symulatora
+# ── simulated device: a plain file in sims/ (see sims/vav-nefryt.py) ──────
+SIM = None          # loaded simulator module
+SIM_PARAMS = {}     # writable points of the simulator
 
 
 def load_sim(name):
@@ -83,7 +83,7 @@ def sim_write(name, value):
     SIM_PARAMS[name] = float(value)
 
 
-# ── realny BACnet (BAC0) ─────────────────────────────────────────────────
+# ── real BACnet (BAC0) ───────────────────────────────────────────────────
 def bacnet_init(ip):
     global BACNET
     try:
@@ -102,7 +102,7 @@ def bacnet_discover():
         pass
     out = []
     for d in (getattr(BACNET, 'devices', None) or []):
-        try:  # BAC0 zwraca krotki (nazwa, vendor, adres, device id)
+        try:  # BAC0 returns tuples (name, vendor, address, device id)
             out.append({'name': str(d[0]), 'vendor': str(d[1]),
                         'addr': str(d[2]), 'devid': int(d[3])})
         except Exception:
@@ -111,8 +111,8 @@ def bacnet_discover():
 
 
 def bacnet_connect(addr, devid):
-    # Kazde polaczenie dostaje numer; starszy watek konczy sie sam, inaczej dwa
-    # urzadzenia nadpisywalyby sobie nawzajem VALUES.
+    # Each connection gets a number so the older polling thread stops by itself;
+    # otherwise two devices would overwrite each other's VALUES.
     global DEVICE, GENERATION
     import BAC0
     dev = BAC0.device(addr, int(devid), BACNET, poll=2)
@@ -148,7 +148,7 @@ def bacnet_write(name, value):
     DEVICE[name] = float(value)
 
 
-# ── profile (pliki JSON po stronie serwera) ──────────────────────────────
+# ── profiles (JSON files on the server side) ─────────────────────────────
 def list_profiles():
     out = {}
     for f in sorted(PROF_DIR.glob('*.json')):
@@ -240,9 +240,9 @@ input,select{background:#0d1117;color:var(--txt);border:1px solid var(--border);
 input[type=number]{width:90px}
 textarea{width:100%;background:#0d1117;color:#c9d4e6;border:1px solid var(--border);border-radius:8px;
  font:12px/1.5 ui-monospace,monospace;padding:.6rem;box-sizing:border-box}
-/* Edytor regul: kolorowanie robi <pre> pod spodem, textarea jest przezroczysta.
-   Obie warstwy MUSZA miec identyczna czcionke, padding i interlinie, inaczej
-   kursor rozjedzie sie z tekstem. */
+/* Rules editor: a <pre> underneath does the highlighting, the textarea on top
+   is transparent. Both layers MUST share font, padding and line-height, or the
+   caret drifts away from the text. */
 .ed{display:flex;background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .ed .gut{padding:.6rem .45rem;text-align:right;color:#4a5568;background:#0b0f14;
  font:12px/1.5 ui-monospace,monospace;white-space:pre;overflow:hidden;user-select:none}
@@ -262,8 +262,8 @@ button.sec{background:#3a4252}
 .ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 @media(max-width:850px){.grid{grid-template-columns:1fr}}
-/* Tabela punktow ma stala szerokosc tresci - na szerokim ekranie caly nadmiar
-   miejsca oddajemy edytorowi regul zamiast dzielic strone po polowie. */
+/* The points table needs a fixed content width, so on a wide screen all the
+   spare room goes to the rules editor instead of splitting the page in half. */
 @media(min-width:1250px){.grid{grid-template-columns:minmax(340px,26%) 1fr}}
 .muted{color:var(--muted)}
 </style></head><body>
@@ -316,8 +316,8 @@ return [
 ];`;
 function newProfile(){$('profName').value='';$('mapping').value='{}';$('rules').value=STARTER;syncEd();
  $('rerr').textContent='wpisz nazwe i Zapisz profil'}
-// Wciaga nazwy punktow prosto ze sterownika - alias na start rowny nazwie,
-// prawa strone poprawiasz recznie na to, czego uzywasz w regulach.
+// Pulls point names straight from the device; each alias starts equal to the
+// name and you edit the right-hand side to whatever the rules use.
 function fillMapping(){
  let cur={};try{cur=JSON.parse($('mapping').value||'{}')}catch(e){}
  const out={};KEYS.forEach(k=>out[k]=cur[k]||k);
@@ -339,10 +339,10 @@ async function connectDev(){
   body:JSON.stringify({addr:$('devAddr').value.trim(),devid:$('devId').value.trim()})});
  const d=await r.json();if(!d.ok)alert(d.error||'blad polaczenia')}
 let KEYS=[];
-// ── edytor regul: kolorowanie, numery linii, wciecia ─────────────────────
+// ── rules editor: highlighting, line numbers, indentation ───────────────
 const KW=/^(const|let|var|function|return|if|else|for|of|in|while|do|new|delete|typeof|instanceof|true|false|null|undefined|break|continue|switch|case|default|try|catch|finally|throw|class|this)$/;
-// Jeden przebieg po zrodle: komentarz | string | liczba | slowo. Kolejnosc ma
-// znaczenie - inaczej slowo wewnatrz stringu dostaloby kolor slowa kluczowego.
+// One pass over the source: comment | string | number | word. Order matters:
+// otherwise a word inside a string would be coloured as a keyword.
 const TOK=/(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][A-Za-z0-9_$]*)/g;
 function hl(src){
  let out='',last=0,m;TOK.lastIndex=0;
@@ -366,22 +366,22 @@ function syncEd(){
  $('gut').textContent=g;
  $('hl').scrollTop=$('gut').scrollTop=ta.scrollTop;$('hl').scrollLeft=ta.scrollLeft;
 }
-// Usuwa stringi i komentarze, zeby liczyc nawiasy tylko w kodzie.
-const bezTekstu=l=>l.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/.*$/,'')
+// Strips strings and comments so brackets are counted in code only.
+const codeOnly=l=>l.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/.*$/,'')
  .replace(/'(?:\\.|[^'\\])*'/g,"''").replace(/"(?:\\.|[^"\\])*"/g,'""').replace(/`(?:\\.|[^`\\])*`/g,'``');
-// Rownanie wciec wg glebokosci nawiasow. Zmienia WYLACZNIE biale znaki na
-// poczatku linii, wiec najgorsze co moze zrobic to brzydkie wciecie.
+// Re-indents by bracket depth. Touches ONLY the leading whitespace, so the
+// worst it can do is produce ugly indentation, never broken code.
 function formatRules(){
- const ta=$('rules');let d=0,wiszace=0;
+ const ta=$('rules');let depth=0,hanging=0;
  ta.value=ta.value.split('\n').map(l=>{
   const t=l.trim();if(!t)return '';
-  const kod=bezTekstu(t);
-  const zamykaNaStarcie=(kod.match(/^[}\])]+/)||[''])[0].length;
-  const poziom=Math.max(0,d-zamykaNaStarcie)+wiszace;
-  d=Math.max(0,d+(kod.match(/[{[(]/g)||[]).length-(kod.match(/[}\])]/g)||[]).length);
-  // if/for/while bez klamry: cialo to nastepna linia, wciecie tylko dla niej
-  wiszace=/^(if|for|while)\b[^{]*\)$|^else$/.test(kod)?1:0;
-  return '  '.repeat(poziom)+t;
+  const code=codeOnly(t);
+  const leadingClosers=(code.match(/^[}\])]+/)||[''])[0].length;
+  const level=Math.max(0,depth-leadingClosers)+hanging;
+  depth=Math.max(0,depth+(code.match(/[{[(]/g)||[]).length-(code.match(/[}\])]/g)||[]).length);
+  // Braceless if/for/while: the body is the next line, so indent just that one.
+  hanging=/^(if|for|while)\b[^{]*\)$|^else$/.test(code)?1:0;
+  return '  '.repeat(level)+t;
  }).join('\n');
  syncEd();
 }
@@ -392,10 +392,10 @@ document.addEventListener('keydown',e=>{
   ta.value=ta.value.slice(0,s)+'  '+ta.value.slice(en);
   ta.selectionStart=ta.selectionEnd=s+2;syncEd()}
  else if(e.key==='Enter'){e.preventDefault();
-  const linia=ta.value.slice(0,s).split('\n').pop();
-  const w=(linia.match(/^\s*/)||[''])[0]+(/[{[(]\s*$/.test(bezTekstu(linia))?'  ':'');
-  ta.value=ta.value.slice(0,s)+'\n'+w+ta.value.slice(en);
-  ta.selectionStart=ta.selectionEnd=s+1+w.length;syncEd()}
+  const line=ta.value.slice(0,s).split('\n').pop();
+  const indent=(line.match(/^\s*/)||[''])[0]+(/[{[(]\s*$/.test(codeOnly(line))?'  ':'');
+  ta.value=ta.value.slice(0,s)+'\n'+indent+ta.value.slice(en);
+  ta.selectionStart=ta.selectionEnd=s+1+indent.length;syncEd()}
 });
 const nd=r=>!isFinite(+r[1])||!isFinite(+r[2]);
 const fmt=v=>!isFinite(+v)?'-':Math.abs(v)<10?(+v).toFixed(2):(+v).toFixed(1);
@@ -424,7 +424,7 @@ async function tick(){
   const src=$('rules').value;
   try{
    out=new Function('p','prev',src)(p,PREV||p)||[];
-   // Najczestsza pomylka: wklejone same obliczenia, bez `return [...]`.
+   // Most common mistake: only the calculations pasted in, without `return [...]`.
    if(!out.length&&src.trim()&&!/\breturn\b/.test(src))
     hint='reguly nic nie zwracaja - brakuje na koncu: return [ [opis, oczekiwane, odczytane, czyOK] ];';
    $('rerr').textContent=hint}
@@ -452,9 +452,9 @@ if __name__ == '__main__':
         name = load_sim(ARGS.sim)
         STATE.update(mode='sim', device=f'symulator: {name}')
         threading.Thread(target=sim_loop, daemon=True).start()
-        gdzie = f'SYMULACJA {name}'
+        where = f'SYMULACJA {name}'
     else:
         bacnet_init(ARGS.ip)
-        gdzie = 'BACnet'
-    print(f'bacnet-check: http://localhost:{ARGS.port}  ({gdzie})')
+        where = 'BACnet'
+    print(f'bacnet-check: http://localhost:{ARGS.port}  ({where})')
     ThreadingHTTPServer(('0.0.0.0', ARGS.port), H).serve_forever()

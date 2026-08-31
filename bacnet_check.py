@@ -259,7 +259,9 @@ button.sec{background:#3a4252}
  <select id="profSel" onchange="pickProfile()"></select>
  <input id="profName" size="12" placeholder="nazwa">
  <button onclick="saveProfile()">Zapisz profil</button>
- <div style="margin:.5rem 0 .2rem" class="muted">mapowanie: nazwa punktu BACnet -> alias w regulach (JSON)</div>
+ <button class="sec" onclick="newProfile()">Nowy</button>
+ <div style="margin:.5rem 0 .2rem" class="muted">mapowanie: nazwa punktu BACnet -> alias w regulach (JSON)
+  <button class="sec" style="padding:.1rem .5rem;font-size:.8em" onclick="fillMapping()">Wypelnij z punktow</button></div>
  <textarea id="mapping" style="min-height:70px">{}</textarea>
  <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy), zwraca [opis, oczekiwane, odczytane, czyOK]</div>
  <textarea id="rules" style="min-height:230px"></textarea>
@@ -277,6 +279,20 @@ async function loadProfiles(keep){
 function applyProfile(n){const p=PROFILES[n];localStorage.bcProfile=n;$('profName').value=n;
  $('mapping').value=JSON.stringify(p.mapping||{},null,1);$('rules').value=p.rules||''}
 function pickProfile(){applyProfile($('profSel').value)}
+const STARTER=`// p = punkty po zmapowaniu aliasow (patrz pole mapowania powyzej).
+// Zwroc liste wierszy: [opis, oczekiwane, odczytane, czyOK]
+const blisko=(a,b,proc)=>Math.abs(a-b)<=Math.abs(a)*proc/100+1;
+return [
+ // ['co sprawdzam', p.alias_oczekiwany, p.alias_odczytany, blisko(p.alias_oczekiwany,p.alias_odczytany,5)],
+];`;
+function newProfile(){$('profName').value='';$('mapping').value='{}';$('rules').value=STARTER;
+ $('rerr').textContent='wpisz nazwe i Zapisz profil'}
+// Wciaga nazwy punktow prosto ze sterownika - alias na start rowny nazwie,
+// prawa strone poprawiasz recznie na to, czego uzywasz w regulach.
+function fillMapping(){
+ let cur={};try{cur=JSON.parse($('mapping').value||'{}')}catch(e){}
+ const out={};KEYS.forEach(k=>out[k]=cur[k]||k);
+ $('mapping').value=JSON.stringify(out,null,1)}
 async function saveProfile(){
  let mapping;try{mapping=JSON.parse($('mapping').value||'{}')}catch(e){alert('mapowanie: '+e.message);return}
  const name=$('profName').value.trim();

@@ -39,13 +39,25 @@ w gicie i przenosic miedzy stanowiskami.
 
 ## Profile w zestawie
 
-- **vav** - sterownik VAV wg opisu programu: rampa CO2 (od nastawa-PropBand do
-  nastawy przestawia wydatek z minimalnego na maksymalny), wyciag nadazajacy za
+- **VAV-nefryt** - sterownik VAV wg opisu programu: rampa CO2 (od nastawa-PropBand
+  do nastawy przestawia wydatek z minimalnego na maksymalny), wyciag nadazajacy za
   nawiewem z uwzglednieniem DIFF, oraz kontrola przeplywu policzonego z predkosci
   i wymiarow kanalu wzgledem nastawy.
-- **przyklad-ogolny** - szablon startowy dla dowolnego innego urzadzenia.
 
-Nowy profil: wybierz szablon, popraw mapowanie i reguly, wpisz nazwe, Zapisz.
+Nowy profil: **Nowy**, potem wpisz nazwe i **Zapisz profil**.
+
+## Skad sie biora nazwy punktow
+
+Punkt to obiekt w sterowniku (analogowy, binarny, wieloznaczny) i **nazwe nadaje
+mu programista sterownika**, nie ta aplikacja. Po polaczeniu zobaczysz w tabeli
+dokladnie to, co siedzi w urzadzeniu - czasem czytelne `SupplyFlowSetpoint`,
+czasem `AV12`. Dlatego jest mapowanie: przepisuje nazwy z konkretnego sterownika
+na krotkie aliasy uzywane w regulach, wiec ta sama regula chodzi na sterownikach
+roznych producentow.
+
+Kolejnosc pracy: polacz sie, kliknij **Wypelnij z punktow** (wciaga wszystkie
+nazwy z urzadzenia), popraw prawa strone na swoje aliasy, napisz reguly, zapisz
+profil pod nazwa urzadzenia.
 
 ## Uwaga do profilu VAV
 

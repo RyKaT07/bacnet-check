@@ -26,6 +26,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = pathlib.Path(__file__).resolve().parent
+# Device definitions live outside the tool; point --profiles / --sims at your own
+# directory so the tool stays device-agnostic. Defaults are next to the script.
 PROF_DIR = BASE / 'profiles'
 SIM_DIR = BASE / 'sims'
 
@@ -47,7 +49,8 @@ def load_sim(name):
     global SIM, SIM_PARAMS
     files = sorted(SIM_DIR.glob('*.py'))
     if not files:
-        raise SystemExit(f'Brak symulatorow w {SIM_DIR}. Zrob wlasny wg sims/vav-nefryt.py')
+        raise SystemExit(f'Brak symulatorow w {SIM_DIR}. Skopiuj jeden z examples/sims/ '
+                         'albo wskaz swoj katalog przez --sims')
     if name:
         path = SIM_DIR / f'{name}.py'
         if not path.is_file():
@@ -446,8 +449,15 @@ if __name__ == '__main__':
     ap.add_argument('--sim', nargs='?', const='', metavar='NAZWA',
                     help='symulowane urzadzenie z sims/NAZWA.py zamiast realnego BACnet')
     ap.add_argument('--ip', help='lokalny interfejs BACnet, np. 192.168.1.10/24')
+    ap.add_argument('--profiles', metavar='KATALOG', help='katalog z profilami regul (domyslnie ./profiles)')
+    ap.add_argument('--sims', metavar='KATALOG', help='katalog z symulatorami (domyslnie ./sims)')
     ap.add_argument('--port', type=int, default=8342)
     ARGS = ap.parse_args()
+    # module-level dirs, reassigned from the flags
+    if ARGS.profiles:
+        PROF_DIR = pathlib.Path(ARGS.profiles).expanduser().resolve()
+    if ARGS.sims:
+        SIM_DIR = pathlib.Path(ARGS.sims).expanduser().resolve()
     if ARGS.sim is not None:
         name = load_sim(ARGS.sim)
         STATE.update(mode='sim', device=f'symulator: {name}')

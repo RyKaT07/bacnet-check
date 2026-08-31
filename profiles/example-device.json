@@ -1,0 +1,12 @@
+{
+ "description": "Przyklad: petla grzewcza z jednym zaworem (szablon do skopiowania)",
+ "mapping": {
+  "Cfg_TempSetpoint": "TempSetpoint",
+  "Cfg_ValveMin": "ValveMin",
+  "Cfg_ValveMax": "ValveMax",
+  "ActualTemp": "Temp",
+  "ActualValve": "Valve",
+  "ActualOutsideTemp": "OutsideTemp"
+ },
+ "rules": "// Example rules. p = current reading, prev = previous one.\n// Return rows: [description, expected, read, isOk]\nconst has=k=>typeof p[k]==='number'&&isFinite(p[k]);\nconst near=(a,b,pct,abs)=>Math.abs(a-b)<=Math.abs(a)*pct/100+(abs||1);\n\n// Judge the loop only once it has settled, otherwise every transient looks wrong.\nconst settled=near(p.Temp,prev.Temp,0,0.05);\n\nconst rows=[\n  ['temperatura trzyma nastawe', p.TempSetpoint, p.Temp, !settled||near(p.TempSetpoint,p.Temp,0,0.5)],\n  ['zawor w dozwolonym zakresie', p.ValveMax, p.Valve, p.Valve>=p.ValveMin&&p.Valve<=p.ValveMax],\n];\nconst missing=['TempSetpoint','Temp','Valve'].filter(k=>!has(k));\nif(missing.length)\n  rows.push(['BRAK PUNKTOW (sprawdz mapowanie): '+missing.join(', '), 0, missing.length, false]);\nreturn rows;"
+}

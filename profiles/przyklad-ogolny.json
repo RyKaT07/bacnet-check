@@ -1,0 +1,8 @@
+{
+ "description": "Szablon startowy dla dowolnego urzadzenia: skopiuj, zmapuj punkty, dopisz reguly",
+ "mapping": {
+  "PrzykladowaNazwaPunktuWSterowniku": "temp_zasilania",
+  "InnaNazwaZeSterownika": "temp_zadana"
+ },
+ "rules": "// p = punkty po zmapowaniu aliasow (patrz pole mapowania powyzej).\n// Zwroc liste wierszy: [opis, oczekiwane, odczytane, czyOK]\nconst blisko=(a,b,proc)=>Math.abs(a-b)<=Math.abs(a)*proc/100+1;\nreturn [\n ['temperatura trzyma nastawe', p.temp_zadana, p.temp_zasilania, blisko(p.temp_zadana,p.temp_zasilania,5)],\n];"
+}

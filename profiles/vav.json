@@ -1,0 +1,5 @@
+{
+ "description": "Sterownik VAV Nefryt: rampa CO2, DIFF, przeplywy z predkosci",
+ "mapping": {},
+ "rules": "// p = punkty po zmapowaniu aliasow. Zwroc liste wierszy:\n// [opis, oczekiwane, odczytane, czyOK]\nconst blisko=(a,b,proc)=>Math.abs(a-b)<=Math.abs(a)*proc/100+1;\nconst A=p.duct_h/1000*p.duct_v/1000;                 // m2\nconst q_sup=(p.v_sup1+p.v_sup2)/2*A*3600;            // przeplyw nawiewu z predkosci (srednia!)\nconst q_ext=(p.v_ext1+p.v_ext2)/2*A*3600;\nconst ramp=Math.min(1,Math.max(0,(p.co2-(p.co2_sp-p.propband))/p.propband));\nconst q_sp_exp=p.qmin+ramp*(p.qmax-p.qmin);          // rampa CO2 wg opisu programu\nconst q_ext_exp=q_sp_exp-p.diff;                     // wyciag nadaza z DIFF\nreturn [\n ['nastawa nawiewu wg rampy CO2 [m3/h]', q_sp_exp, p.q_sp_setpoint, blisko(q_sp_exp,p.q_sp_setpoint,5)],\n ['nastawa wyciagu = nawiew-DIFF [m3/h]', q_ext_exp, p.q_ext_setpoint, blisko(q_ext_exp,p.q_ext_setpoint,5)],\n ['przeplyw nawiewu z predkosci [m3/h]', q_sup, p.q_sp_setpoint, blisko(q_sup,p.q_sp_setpoint,10)],\n ['przeplyw wyciagu z predkosci [m3/h]', q_ext, p.q_ext_setpoint, blisko(q_ext,p.q_ext_setpoint,10)],\n];"
+}

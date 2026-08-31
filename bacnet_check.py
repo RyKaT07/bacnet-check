@@ -11,14 +11,14 @@ w profilach (profiles/*.json): mapowanie nazw punktow na krotkie aliasy +
 reguly JS liczace "oczekiwane vs odczytane". VAV to tylko jeden z profili.
 
 Tryby (uv sam ogarnia srodowisko - zaleznosci sa w naglowku powyzej):
-  uv run bacnet_check.py --sim                  # symulowane urzadzenie VAV, bez sprzetu
+  uv run bacnet_check.py --sim [nazwa]          # symulator z sims/<nazwa>.py, bez sprzetu
   uv run bacnet_check.py [--ip 192.168.1.10/24] # realny BACnet; urzadzenie wybierasz w UI
 
 UI: http://localhost:8342
 """
 import argparse
+import importlib.util
 import json
-import math
 import pathlib
 import re
 import threading
@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = pathlib.Path(__file__).resolve().parent
 PROF_DIR = BASE / 'profiles'
+SIM_DIR = BASE / 'sims'
 
 VALUES = {}    # raw_name -> {'value','unit','writable'}
 LOCK = threading.Lock()
@@ -37,66 +38,48 @@ GENERATION = 0
 ARGS = None
 
 
-# ── symulator sterownika VAV (nazwy punktow i logika jak w layoutach) ────
-# Wymiary kanalow sa w METRACH, tak jak w sterowniku (0,75 x 0,15).
-SIM_PARAMS = dict(Cfg_Mode=1.0, Cfg_MinFlow=50.0, Cfg_MaxFlow=10000.0,
-                  Cfg_CO2PropBand=400.0, Cfg_CO2Setpoint=1500.0, Cfg_Diff=0.0,
-                  Cfg_SupplyH=0.75, Cfg_SupplyV=0.15,
-                  Cfg_ReturnH=0.50, Cfg_ReturnV=0.30)
-SIM_STATE = dict(q_sup=0.0, q_ext=0.0)   # nadazanie przepustnic za nastawa
+# ── symulowane urzadzenie: zwykly plik w sims/ (patrz sims/vav-nefryt.py) ─
+SIM = None          # zaladowany modul symulatora
+SIM_PARAMS = {}     # punkty zapisywalne symulatora
+
+
+def load_sim(name):
+    global SIM, SIM_PARAMS
+    files = sorted(SIM_DIR.glob('*.py'))
+    if not files:
+        raise SystemExit(f'Brak symulatorow w {SIM_DIR}. Zrob wlasny wg sims/vav-nefryt.py')
+    if name:
+        path = SIM_DIR / f'{name}.py'
+        if not path.is_file():
+            raise SystemExit(f'Nie ma sims/{name}.py. Dostepne: '
+                             + ', '.join(f.stem for f in files))
+    else:
+        path = files[0]
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    SIM = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(SIM)
+    SIM_PARAMS = dict(SIM.PARAMS)
+    return path.stem
 
 
 def sim_loop():
-    STATE.update(mode='sim', device='symulator VAV (layout Nefryt)')
-    t0 = time.time()
+    units = getattr(SIM, 'UNITS', {})
+    state, t0 = {}, time.time()
     while True:
-        t = time.time() - t0
-        p = SIM_PARAMS
-        co2 = 1200 + 400 * math.sin(t / 30)
-
-        # regulacja glowna: rampa CO2 od (nastawa-PropBand) do nastawy
-        x1 = p['Cfg_CO2Setpoint'] - p['Cfg_CO2PropBand']
-        band = p['Cfg_CO2PropBand'] or 1
-        ramp = max(0.0, min(1.0, (co2 - x1) / band))
-        sp_auto = p['Cfg_MinFlow'] + ramp * (p['Cfg_MaxFlow'] - p['Cfg_MinFlow'])
-        mode = int(p['Cfg_Mode'])
-        sp_sup = {1: sp_auto, 2: p['Cfg_MinFlow'], 3: p['Cfg_MaxFlow']}.get(mode, 0.0)
-        sp_ext = sp_sup - p['Cfg_Diff']
-
-        # PID + przepustnica: proste nadazanie pierwszego rzedu
-        for key, sp in (('q_sup', sp_sup), ('q_ext', sp_ext)):
-            SIM_STATE[key] += (max(0.0, sp) - SIM_STATE[key]) * 0.25
-        a_sup = p['Cfg_SupplyH'] * p['Cfg_SupplyV']
-        a_ext = p['Cfg_ReturnH'] * p['Cfg_ReturnV']
-        q_sup, q_ext = SIM_STATE['q_sup'], SIM_STATE['q_ext']
-        # sterownik liczy przeplyw jako suma_predkosci * przekroj * 3600,
-        # wiec predkosc raportowana to dokladnie odwrotnosc tego rachunku
-        v_sup = q_sup / 3600 / a_sup if a_sup else 0
-        v_ext = q_ext / 3600 / a_ext if a_ext else 0
-        span = (p['Cfg_MaxFlow'] or 1)
-        pts = {
-            'ActualCO2': (co2, 'ppm', False),
-            'ActualSpeedSupply': (v_sup, 'm/s', False),
-            'ActualFlowSupply': (q_sup, 'm3/h', False),
-            'ActualSpeedReturn': (v_ext, 'm/s', False),
-            'ActualFlowReturn': (q_ext, 'm3/h', False),
-            'ActualPositionSupply': (min(100.0, 100 * q_sup / span), '%', False),
-            'ActualPositionReturn': (min(100.0, 100 * q_ext / span), '%', False),
-        }
+        reads = SIM.step(time.time() - t0, SIM_PARAMS, state)
         with LOCK:
             VALUES.clear()
-            for k, v in p.items():
-                unit = ('m' if k.endswith(('H', 'V')) else 'ppm' if 'CO2' in k
-                        else '' if k == 'Cfg_Mode' else 'm3/h')
-                VALUES[k] = {'value': round(v, 3), 'unit': unit, 'writable': True}
-            for k, (v, u, w) in pts.items():
-                VALUES[k] = {'value': round(v, 2), 'unit': u, 'writable': w}
+            for k, v in SIM_PARAMS.items():
+                VALUES[k] = {'value': round(v, 3), 'unit': units.get(k, ''), 'writable': True}
+            for k, v in reads.items():
+                VALUES[k] = {'value': round(v, 2) if isinstance(v, (int, float)) else v,
+                             'unit': units.get(k, ''), 'writable': False}
         time.sleep(1)
 
 
 def sim_write(name, value):
     if name not in SIM_PARAMS:
-        raise ValueError(f'{name} nie jest zapisywalny w symulacji')
+        raise ValueError(f'{name} nie jest zapisywalny w tym symulatorze')
     SIM_PARAMS[name] = float(value)
 
 
@@ -210,7 +193,7 @@ class H(BaseHTTPRequestHandler):
         if p == '/api/profiles':
             return self._json(list_profiles())
         if p == '/api/discover':
-            if ARGS.sim:
+            if ARGS.sim is not None:
                 return self._json([])
             try:
                 return self._json(bacnet_discover())
@@ -228,10 +211,10 @@ class H(BaseHTTPRequestHandler):
         try:
             if p == '/api/write':
                 body = self._body()
-                (sim_write if ARGS.sim else bacnet_write)(body['name'], body['value'])
+                (sim_write if ARGS.sim is not None else bacnet_write)(body['name'], body['value'])
                 return self._json({'ok': True})
             if p == '/api/connect':
-                if ARGS.sim:
+                if ARGS.sim is not None:
                     return self._json({'ok': False, 'error': 'tryb symulacji'}, 400)
                 body = self._body()
                 bacnet_connect(body['addr'], body['devid'])
@@ -370,13 +353,18 @@ loadProfiles().then(tick);
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--sim', action='store_true', help='symulowane urzadzenie VAV zamiast realnego BACnet')
+    ap.add_argument('--sim', nargs='?', const='', metavar='NAZWA',
+                    help='symulowane urzadzenie z sims/NAZWA.py zamiast realnego BACnet')
     ap.add_argument('--ip', help='lokalny interfejs BACnet, np. 192.168.1.10/24')
     ap.add_argument('--port', type=int, default=8342)
     ARGS = ap.parse_args()
-    if ARGS.sim:
+    if ARGS.sim is not None:
+        name = load_sim(ARGS.sim)
+        STATE.update(mode='sim', device=f'symulator: {name}')
         threading.Thread(target=sim_loop, daemon=True).start()
+        gdzie = f'SYMULACJA {name}'
     else:
         bacnet_init(ARGS.ip)
-    print(f'bacnet-check: http://localhost:{ARGS.port}  ({"SYMULACJA" if ARGS.sim else "BACnet"})')
+        gdzie = 'BACnet'
+    print(f'bacnet-check: http://localhost:{ARGS.port}  ({gdzie})')
     ThreadingHTTPServer(('0.0.0.0', ARGS.port), H).serve_forever()

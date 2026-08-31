@@ -8,8 +8,8 @@ Zaleznosci sa zapisane w naglowku `bacnet_check.py` (PEP 723), wiec **uv sam
 tworzy srodowisko** - nie ma czego instalowac ani zadnego venv do pilnowania.
 
 ```bash
-# symulowane urzadzenie (VAV), bez sprzetu
-uv run bacnet_check.py --sim
+# symulowane urzadzenie z sims/vav-nefryt.py, bez sprzetu
+uv run bacnet_check.py --sim vav-nefryt
 
 # realny BACnet; urzadzenie wybierasz juz w przegladarce
 uv run bacnet_check.py [--ip <ip-twojego-komputera>/24]
@@ -17,6 +17,8 @@ uv run bacnet_check.py [--ip <ip-twojego-komputera>/24]
 # skrypt jest wykonywalny, wiec dziala tez tak:
 ./bacnet_check.py --sim
 ```
+
+Samo `--sim` (bez nazwy) bierze pierwszy plik z `sims/`.
 
 Nie masz uv? `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
@@ -36,6 +38,20 @@ Sama aplikacja nic nie wie o urzadzeniach. Zna tylko trzy rzeczy:
 Mapowanie i reguly razem tworza **profil** (`profiles/*.json`). Profile
 edytujesz w przegladarce i zapisujesz na serwerze, wiec da sie je trzymac
 w gicie i przenosic miedzy stanowiskami.
+
+## Symulatory (`sims/*.py`)
+
+Symulowane urzadzenie to zwykly plik Pythona, nie czesc aplikacji - kopiujesz
+`sims/vav-nefryt.py` i przerabiasz pod swoje urzadzenie. Kontrakt jest krotki:
+
+- `PARAMS` - punkty zapisywalne i ich wartosci poczatkowe
+- `UNITS` - jednostki (opcjonalnie)
+- `step(t, p, s)` - zwraca punkty tylko do odczytu; `t` to sekundy od startu,
+  `p` to biezace parametry, `s` to wlasny stan miedzy krokami
+
+W zestawie jest `vav-nefryt` - odwzorowuje layout sterownika (rampa CO2, tryby,
+wyciag nadazny z DIFF), z tymi samymi nazwami punktow co prawdziwe urzadzenie,
+wiec profil regul dziala bez zmian na symulacji i na sprzecie.
 
 ## Profile w zestawie
 

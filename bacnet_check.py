@@ -315,7 +315,8 @@ async function connectDev(){
   body:JSON.stringify({addr:$('devAddr').value.trim(),devid:$('devId').value.trim()})});
  const d=await r.json();if(!d.ok)alert(d.error||'blad polaczenia')}
 let KEYS=[];
-const fmt=v=>Math.abs(v)<10?(+v).toFixed(2):(+v).toFixed(1);
+const nd=r=>!isFinite(+r[1])||!isFinite(+r[2]);
+const fmt=v=>!isFinite(+v)?'-':Math.abs(v)<10?(+v).toFixed(2):(+v).toFixed(1);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function writePoint(i,el){
  const r=await fetch('/api/write',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -350,7 +351,7 @@ async function tick(){
   $('res').innerHTML=out.length?'<tr><th>regula</th><th>oczekiwane</th><th>odczytane</th><th></th></tr>'+
    out.map(r=>`<tr><td>${r[0]}</td><td style="text-align:right">${fmt(+r[1])}</td>
     <td style="text-align:right">${fmt(+r[2])}</td>
-    <td class="${r[3]?'ok':'bad'}">${r[3]?'OK':'ROZJAZD'}</td></tr>`).join('')
+    <td class="${nd(r)?'muted':r[3]?'ok':'bad'}">${nd(r)?'brak danych':r[3]?'OK':'ROZJAZD'}</td></tr>`).join('')
    :'<tr><td class="muted">profil bez regul albo brak punktow</td></tr>';
  }catch(e){}
  setTimeout(tick,1500)}

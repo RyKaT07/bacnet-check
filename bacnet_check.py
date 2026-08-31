@@ -17,6 +17,7 @@ Modes (uv builds the environment itself - dependencies are declared above):
 UI: http://localhost:8342
 """
 import argparse
+import asyncio
 import importlib.util
 import json
 import pathlib
@@ -37,6 +38,7 @@ STATE = {'mode': 'idle', 'device': None, 'error': None}
 BACNET = None
 DEVICE = None
 GENERATION = 0
+LOOP = None      # asyncio loop dedicated to BAC0
 ARGS = None
 
 
@@ -87,68 +89,116 @@ def sim_write(name, value):
 
 
 # ── real BACnet (BAC0) ───────────────────────────────────────────────────
+# BAC0 is fully asynchronous: the stack, the device objects and the writes all
+# have to live on one running asyncio loop. The HTTP server is threaded, so we
+# keep a dedicated loop in its own thread and marshal every BAC0 call into it.
+def loop_start():
+    global LOOP
+    LOOP = asyncio.new_event_loop()
+    threading.Thread(target=LOOP.run_forever, daemon=True).start()
+
+
+def on_loop(coro, timeout=180):
+    """Run a coroutine on the BACnet loop and wait for its result."""
+    if LOOP is None:
+        raise RuntimeError('petla BACnet nie wystartowala')
+    return asyncio.run_coroutine_threadsafe(coro, LOOP).result(timeout)
+
+
 def bacnet_init(ip):
-    global BACNET
     try:
-        import BAC0
+        import BAC0  # noqa: F401
     except ImportError:
         raise SystemExit('Brak biblioteki BAC0. Uruchom przez: uv run bacnet_check.py'
                          '   (albo z --sim, bez sprzetu)')
-    BACNET = BAC0.lite(ip=ip) if ip else BAC0.lite()
+    loop_start()
+    on_loop(_bacnet_init(ip))
     STATE.update(mode='bacnet', device=None)
 
 
+async def _bacnet_init(ip):
+    global BACNET
+    import BAC0
+    BACNET = BAC0.lite(ip=ip) if ip else BAC0.lite()
+    # The constructor only schedules startup; wait for the stack to come up.
+    for _ in range(300):
+        if getattr(BACNET, '_initialized', False):
+            await asyncio.sleep(1)
+            return
+        await asyncio.sleep(0.1)
+    raise RuntimeError('BAC0 nie wystartowal w 30 s - sprawdz --ip i uprawnienia do portu 47808')
+
+
 def bacnet_discover():
-    try:
-        BACNET.discover()
-    except Exception:
-        pass
+    return on_loop(_discover())
+
+
+async def _discover():
+    BACNET.discover()
+    await asyncio.sleep(3)          # let the who-is answers arrive
+    rows = await BACNET._devices(_return_list=True)
     out = []
-    for d in (getattr(BACNET, 'devices', None) or []):
-        try:  # BAC0 returns tuples (name, vendor, address, device id)
-            out.append({'name': str(d[0]), 'vendor': str(d[1]),
-                        'addr': str(d[2]), 'devid': int(d[3])})
-        except Exception:
+    for r in (rows or []):
+        try:  # (name, vendor, device instance, address, network)
+            out.append({'name': str(r[0]), 'vendor': str(r[1]),
+                        'devid': int(r[2]), 'addr': str(r[3])})
+        except (ValueError, IndexError, TypeError):
             pass
     return out
 
 
 def bacnet_connect(addr, devid):
-    # Each connection gets a number so the older polling thread stops by itself;
+    on_loop(_connect(addr, devid))
+
+
+async def _connect(addr, devid):
+    # Each connection gets a number so the older polling task stops by itself;
     # otherwise two devices would overwrite each other's VALUES.
     global DEVICE, GENERATION
     import BAC0
-    dev = BAC0.device(addr, int(devid), BACNET, poll=2)
+    dev = await BAC0.device(addr, int(devid), BACNET, poll=2)
+    # BAC0 does not raise when the controller does not answer: it hands back a
+    # device parked in the disconnected state, so check before reporting success.
+    state = type(dev).__name__
+    if 'Disconnected' in state:
+        STATE.update(error=f'{addr}/{devid} nie odpowiada')
+        raise RuntimeError(f'urzadzenie {addr} (id {devid}) nie odpowiada')
     GENERATION += 1
-    mine = GENERATION
     DEVICE = dev
     STATE.update(device=f'{addr} / {devid}', error=None)
+    asyncio.create_task(_poll(dev, GENERATION))
 
-    def poll():
-        while GENERATION == mine:
-            snap = {}
-            for pt in dev.points:
-                try:
-                    v = pt.lastValue
-                    snap[pt.properties.name] = {
-                        'value': v if isinstance(v, (int, float)) else str(v),
-                        'unit': str(getattr(pt.properties, 'units_state', '') or ''),
-                        'writable': ('Output' in str(pt.properties.type)
-                                     or 'Value' in str(pt.properties.type)),
-                    }
-                except Exception:
-                    pass
-            with LOCK:
-                VALUES.clear()
-                VALUES.update(snap)
-            time.sleep(2)
-    threading.Thread(target=poll, daemon=True).start()
+
+async def _poll(dev, generation):
+    while GENERATION == generation:
+        snap = {}
+        for pt in dev.points:
+            try:
+                v = pt.lastValue
+                snap[pt.properties.name] = {
+                    'value': v if isinstance(v, (int, float)) else str(v),
+                    'unit': str(getattr(pt.properties, 'units_state', '') or ''),
+                    'writable': ('Output' in str(pt.properties.type)
+                                 or 'Value' in str(pt.properties.type)),
+                }
+            except Exception:
+                pass
+        with LOCK:
+            VALUES.clear()
+            VALUES.update(snap)
+        await asyncio.sleep(2)
 
 
 def bacnet_write(name, value):
     if DEVICE is None:
         raise RuntimeError('brak polaczenia z urzadzeniem - najpierw Polacz')
-    DEVICE[name] = float(value)
+    on_loop(_write(name, value), timeout=30)
+
+
+async def _write(name, value):
+    # Awaiting the point's own setter instead of `device[name] = value`, because
+    # that shortcut fires and forgets, so a refused write would look successful.
+    await DEVICE._findPoint(name, force_read=False)._set(float(value))
 
 
 # ── profiles (JSON files on the server side) ─────────────────────────────

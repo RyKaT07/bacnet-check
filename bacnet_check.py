@@ -315,6 +315,7 @@ async function connectDev(){
   body:JSON.stringify({addr:$('devAddr').value.trim(),devid:$('devId').value.trim()})});
  const d=await r.json();if(!d.ok)alert(d.error||'blad polaczenia')}
 let KEYS=[];
+const fmt=v=>Math.abs(v)<10?(+v).toFixed(2):(+v).toFixed(1);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function writePoint(i,el){
  const r=await fetch('/api/write',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -331,18 +332,24 @@ async function tick(){
   const rows=Object.entries(pts).map(([k,v],i)=>{
    const inp=v.writable?`<input type="number" step="any" value="${typeof v.value==='number'?v.value:''}"
      onfocus="editing=${i}" onblur="editing=null" onchange="writePoint(${i},this)">`:'';
-   return `<tr><td>${esc(k)}</td><td style="text-align:right">${typeof v.value==='number'?v.value.toFixed(1):esc(v.value)}</td>
+   return `<tr><td>${esc(k)}</td><td style="text-align:right">${typeof v.value==='number'?fmt(v.value):esc(v.value)}</td>
     <td>${esc(v.unit||'')}</td><td>${inp}</td></tr>`});
   if(editing===null)$('tbl').innerHTML='<tr><th>punkt</th><th>wartosc</th><th>jedn.</th><th>zapis</th></tr>'+rows.join('');
   let mapping={};try{mapping=JSON.parse($('mapping').value||'{}')}catch(e){}
   const p={};for(const[k,v]of Object.entries(pts))p[mapping[k]||k]=v.value;
-  let out=[];
-  try{out=new Function('p','prev',$('rules').value)(p,PREV||p)||[];$('rerr').textContent=''}
+  let out=[],hint='';
+  const src=$('rules').value;
+  try{
+   out=new Function('p','prev',src)(p,PREV||p)||[];
+   // Najczestsza pomylka: wklejone same obliczenia, bez `return [...]`.
+   if(!out.length&&src.trim()&&!/\breturn\b/.test(src))
+    hint='reguly nic nie zwracaja - brakuje na koncu: return [ [opis, oczekiwane, odczytane, czyOK] ];';
+   $('rerr').textContent=hint}
   catch(e){$('rerr').textContent='blad regul: '+e.message}
   PREV=p;
   $('res').innerHTML=out.length?'<tr><th>regula</th><th>oczekiwane</th><th>odczytane</th><th></th></tr>'+
-   out.map(r=>`<tr><td>${r[0]}</td><td style="text-align:right">${(+r[1]).toFixed(1)}</td>
-    <td style="text-align:right">${(+r[2]).toFixed(1)}</td>
+   out.map(r=>`<tr><td>${r[0]}</td><td style="text-align:right">${fmt(+r[1])}</td>
+    <td style="text-align:right">${fmt(+r[2])}</td>
     <td class="${r[3]?'ok':'bad'}">${r[3]?'OK':'ROZJAZD'}</td></tr>`).join('')
    :'<tr><td class="muted">profil bez regul albo brak punktow</td></tr>';
  }catch(e){}

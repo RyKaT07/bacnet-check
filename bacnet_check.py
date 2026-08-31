@@ -37,36 +37,58 @@ GENERATION = 0
 ARGS = None
 
 
-# ── symulowane urzadzenie VAV (demo/testy regul bez sprzetu) ─────────────
-SIM_PARAMS = dict(co2_sp=1000.0, propband=200.0, diff=50.0, qmin=200.0,
-                  qmax=800.0, duct_h=400.0, duct_v=300.0)
+# ── symulator sterownika VAV (nazwy punktow i logika jak w layoutach) ────
+# Wymiary kanalow sa w METRACH, tak jak w sterowniku (0,75 x 0,15).
+SIM_PARAMS = dict(Cfg_Mode=1.0, Cfg_MinFlow=50.0, Cfg_MaxFlow=10000.0,
+                  Cfg_CO2PropBand=400.0, Cfg_CO2Setpoint=1500.0, Cfg_Diff=0.0,
+                  Cfg_SupplyH=0.75, Cfg_SupplyV=0.15,
+                  Cfg_ReturnH=0.50, Cfg_ReturnV=0.30)
+SIM_STATE = dict(q_sup=0.0, q_ext=0.0)   # nadazanie przepustnic za nastawa
+
 
 def sim_loop():
-    STATE.update(mode='sim', device='symulator VAV')
+    STATE.update(mode='sim', device='symulator VAV (layout Nefryt)')
     t0 = time.time()
     while True:
         t = time.time() - t0
         p = SIM_PARAMS
-        co2 = 900 + 300 * math.sin(t / 30)
-        ramp = max(0.0, min(1.0, (co2 - (p['co2_sp'] - p['propband'])) / p['propband']))
-        q_sp = p['qmin'] + ramp * (p['qmax'] - p['qmin'])
-        q_ext = q_sp - p['diff']
-        area = p['duct_h'] / 1000 * p['duct_v'] / 1000
-        v_sup = q_sp / 3600 / area if area else 0
-        v_ext = q_ext / 3600 / area if area else 0
-        n = lambda: 1 + 0.02 * math.sin(t * 7)   # ponytail: szum deterministyczny wystarczy
+        co2 = 1200 + 400 * math.sin(t / 30)
+
+        # regulacja glowna: rampa CO2 od (nastawa-PropBand) do nastawy
+        x1 = p['Cfg_CO2Setpoint'] - p['Cfg_CO2PropBand']
+        band = p['Cfg_CO2PropBand'] or 1
+        ramp = max(0.0, min(1.0, (co2 - x1) / band))
+        sp_auto = p['Cfg_MinFlow'] + ramp * (p['Cfg_MaxFlow'] - p['Cfg_MinFlow'])
+        mode = int(p['Cfg_Mode'])
+        sp_sup = {1: sp_auto, 2: p['Cfg_MinFlow'], 3: p['Cfg_MaxFlow']}.get(mode, 0.0)
+        sp_ext = sp_sup - p['Cfg_Diff']
+
+        # PID + przepustnica: proste nadazanie pierwszego rzedu
+        for key, sp in (('q_sup', sp_sup), ('q_ext', sp_ext)):
+            SIM_STATE[key] += (max(0.0, sp) - SIM_STATE[key]) * 0.25
+        a_sup = p['Cfg_SupplyH'] * p['Cfg_SupplyV']
+        a_ext = p['Cfg_ReturnH'] * p['Cfg_ReturnV']
+        q_sup, q_ext = SIM_STATE['q_sup'], SIM_STATE['q_ext']
+        # sterownik liczy przeplyw jako suma_predkosci * przekroj * 3600,
+        # wiec predkosc raportowana to dokladnie odwrotnosc tego rachunku
+        v_sup = q_sup / 3600 / a_sup if a_sup else 0
+        v_ext = q_ext / 3600 / a_ext if a_ext else 0
+        span = (p['Cfg_MaxFlow'] or 1)
         pts = {
-            'co2': (co2, 'ppm', False), 'co2_sp': (p['co2_sp'], 'ppm', True),
-            'propband': (p['propband'], 'ppm', True), 'diff': (p['diff'], 'm3/h', True),
-            'qmin': (p['qmin'], 'm3/h', True), 'qmax': (p['qmax'], 'm3/h', True),
-            'duct_h': (p['duct_h'], 'mm', True), 'duct_v': (p['duct_v'], 'mm', True),
-            'q_sp_setpoint': (q_sp, 'm3/h', False), 'q_ext_setpoint': (q_ext, 'm3/h', False),
-            'v_sup1': (v_sup * n(), 'm/s', False), 'v_sup2': (v_sup * (2 - n()), 'm/s', False),
-            'v_ext1': (v_ext * n(), 'm/s', False), 'v_ext2': (v_ext * (2 - n()), 'm/s', False),
-            'damper_sup': (10 + 80 * ramp, '%', False), 'damper_ext': (10 + 78 * ramp, '%', False),
+            'ActualCO2': (co2, 'ppm', False),
+            'ActualSpeedSupply': (v_sup, 'm/s', False),
+            'ActualFlowSupply': (q_sup, 'm3/h', False),
+            'ActualSpeedReturn': (v_ext, 'm/s', False),
+            'ActualFlowReturn': (q_ext, 'm3/h', False),
+            'ActualPositionSupply': (min(100.0, 100 * q_sup / span), '%', False),
+            'ActualPositionReturn': (min(100.0, 100 * q_ext / span), '%', False),
         }
         with LOCK:
             VALUES.clear()
+            for k, v in p.items():
+                unit = ('m' if k.endswith(('H', 'V')) else 'ppm' if 'CO2' in k
+                        else '' if k == 'Cfg_Mode' else 'm3/h')
+                VALUES[k] = {'value': round(v, 3), 'unit': unit, 'writable': True}
             for k, (v, u, w) in pts.items():
                 VALUES[k] = {'value': round(v, 2), 'unit': u, 'writable': w}
         time.sleep(1)
@@ -263,14 +285,14 @@ button.sec{background:#3a4252}
  <div style="margin:.5rem 0 .2rem" class="muted">mapowanie: nazwa punktu BACnet -> alias w regulach (JSON)
   <button class="sec" style="padding:.1rem .5rem;font-size:.8em" onclick="fillMapping()">Wypelnij z punktow</button></div>
  <textarea id="mapping" style="min-height:70px">{}</textarea>
- <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy), zwraca [opis, oczekiwane, odczytane, czyOK]</div>
+ <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy) i prev (poprzedni odczyt), zwraca [opis, oczekiwane, odczytane, czyOK]</div>
  <textarea id="rules" style="min-height:230px"></textarea>
  <div style="margin-top:.3rem"><span id="rerr" class="bad"></span></div></div>
 <div class="card"><h2>Wynik regul</h2><table id="res"></table></div>
 </div></div>
 <script>
 const $=id=>document.getElementById(id);
-let PROFILES={},editing=null;
+let PROFILES={},editing=null,PREV=null;
 async function loadProfiles(keep){
  PROFILES=await (await fetch('/api/profiles')).json();
  const cur=keep||localStorage.bcProfile||Object.keys(PROFILES)[0]||'';
@@ -332,8 +354,9 @@ async function tick(){
   let mapping={};try{mapping=JSON.parse($('mapping').value||'{}')}catch(e){}
   const p={};for(const[k,v]of Object.entries(pts))p[mapping[k]||k]=v.value;
   let out=[];
-  try{out=new Function('p',$('rules').value)(p)||[];$('rerr').textContent=''}
+  try{out=new Function('p','prev',$('rules').value)(p,PREV||p)||[];$('rerr').textContent=''}
   catch(e){$('rerr').textContent='blad regul: '+e.message}
+  PREV=p;
   $('res').innerHTML=out.length?'<tr><th>regula</th><th>oczekiwane</th><th>odczytane</th><th></th></tr>'+
    out.map(r=>`<tr><td>${r[0]}</td><td style="text-align:right">${(+r[1]).toFixed(1)}</td>
     <td style="text-align:right">${(+r[2]).toFixed(1)}</td>

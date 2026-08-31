@@ -1,5 +1,23 @@
 {
- "description": "Sterownik VAV Nefryt: rampa CO2, DIFF, przeplywy z predkosci",
- "mapping": {},
- "rules": "// p = punkty po zmapowaniu aliasow. Zwroc liste wierszy:\n// [opis, oczekiwane, odczytane, czyOK]\nconst blisko=(a,b,proc)=>Math.abs(a-b)<=Math.abs(a)*proc/100+1;\nconst A=p.duct_h/1000*p.duct_v/1000;                 // m2\nconst q_sup=(p.v_sup1+p.v_sup2)/2*A*3600;            // przeplyw nawiewu z predkosci (srednia!)\nconst q_ext=(p.v_ext1+p.v_ext2)/2*A*3600;\nconst ramp=Math.min(1,Math.max(0,(p.co2-(p.co2_sp-p.propband))/p.propband));\nconst q_sp_exp=p.qmin+ramp*(p.qmax-p.qmin);          // rampa CO2 wg opisu programu\nconst q_ext_exp=q_sp_exp-p.diff;                     // wyciag nadaza z DIFF\nreturn [\n ['nastawa nawiewu wg rampy CO2 [m3/h]', q_sp_exp, p.q_sp_setpoint, blisko(q_sp_exp,p.q_sp_setpoint,5)],\n ['nastawa wyciagu = nawiew-DIFF [m3/h]', q_ext_exp, p.q_ext_setpoint, blisko(q_ext_exp,p.q_ext_setpoint,5)],\n ['przeplyw nawiewu z predkosci [m3/h]', q_sup, p.q_sp_setpoint, blisko(q_sup,p.q_sp_setpoint,10)],\n ['przeplyw wyciagu z predkosci [m3/h]', q_ext, p.q_ext_setpoint, blisko(q_ext,p.q_ext_setpoint,10)],\n];"
+ "description": "Sterownik VAV Nefryt - rampa CO2, tryby AUTO/MIN/MAX/OFF, wyciag nadazny z DIFF",
+ "mapping": {
+  "Cfg_Mode": "Mode",
+  "Cfg_MinFlow": "MinFlow",
+  "Cfg_MaxFlow": "MaxFlow",
+  "Cfg_CO2PropBand": "CO2PropBand",
+  "Cfg_CO2Setpoint": "CO2Setpoint",
+  "Cfg_Diff": "Diff",
+  "Cfg_SupplyH": "SupplyH",
+  "Cfg_SupplyV": "SupplyV",
+  "Cfg_ReturnH": "ReturnH",
+  "Cfg_ReturnV": "ReturnV",
+  "ActualCO2": "CO2",
+  "ActualSpeedSupply": "SpeedSupply",
+  "ActualFlowSupply": "FlowSupply",
+  "ActualSpeedReturn": "SpeedReturn",
+  "ActualFlowReturn": "FlowReturn",
+  "ActualPositionSupply": "PositionSupply",
+  "ActualPositionReturn": "PositionReturn"
+ },
+ "rules": "// Sprawdza sterownik VAV Nefryt wg layoutu (REGULACJA GLOWNA / NAWIEW / WYCIAG).\n// p = odczyt biezacy, prev = odczyt poprzedni. Wymiary kanalow w METRACH (0,75 x 0,15).\nconst tol=(a,b,proc,abs)=>Math.abs(a-b)<=Math.abs(a)*proc/100+(abs||1);\nconst A_sup=p.SupplyH*p.SupplyV;                 // m2\nconst A_ext=p.ReturnH*p.ReturnV;\n\n// 1) przeplyw = suma predkosci x przekroj x 3600 (blok Multiply2 w sterowniku)\nconst q_sup_exp=p.SpeedSupply*A_sup*3600;\nconst q_ext_exp=p.SpeedReturn*A_ext*3600;\n\n// 2) rampa CO2: od (nastawa - PropBand) do nastawy, z MinFlow do MaxFlow (LinearGraph, Limited)\nconst x1=p.CO2Setpoint-p.CO2PropBand;\nconst ramp=Math.min(1,Math.max(0,(p.CO2-x1)/(p.CO2PropBand||1)));\nconst sp_auto=p.MinFlow+ramp*(p.MaxFlow-p.MinFlow);\n\n// 3) tryb (NumericSelect): 1-AUTO, 2-MIN, 3-MAX, 4-OFF\nconst m=Number(p.Mode);\nconst sp_sup=m===1?sp_auto:m===2?p.MinFlow:m===3?p.MaxFlow:0;\nconst sp_ext=sp_sup-p.Diff;                      // nastawa nadazna za nawiewem\n\n// Regulacje oceniamy dopiero, gdy uklad sie ustabilizowal, bo przepustnica\n// dojezdza do nowej nastawy kilkadziesiat sekund - inaczej ROZJAZD miga stale.\nconst stoi=(a,b)=>tol(a,b,1,5);\nconst ustalone=stoi(p.FlowSupply,prev.FlowSupply)&&stoi(p.FlowReturn,prev.FlowReturn);\nconst kraniec=(poz)=>poz>=99||poz<=1;            // przepustnica na ograniczniku\nconst pomin=(poz)=>!ustalone||kraniec(poz);\n\nconst r=[\n ['przeplyw nawiewu = predkosc x przekroj x 3600', q_sup_exp, p.FlowSupply, tol(q_sup_exp,p.FlowSupply,3)],\n ['przeplyw wyciagu = predkosc x przekroj x 3600', q_ext_exp, p.FlowReturn, tol(q_ext_exp,p.FlowReturn,3)],\n ['nastawa nawiewu wg rampy CO2 i trybu', sp_sup, p.FlowSupply,\n   pomin(p.PositionSupply)||tol(sp_sup,p.FlowSupply,10,20)],\n ['wyciag nadaza za nawiewem (nawiew - DIFF)', sp_ext, p.FlowReturn,\n   pomin(p.PositionReturn)||tol(sp_ext,p.FlowReturn,10,20)],\n ['roznica nawiew-wyciag = DIFF', p.Diff, p.FlowSupply-p.FlowReturn,\n   pomin(p.PositionSupply)||pomin(p.PositionReturn)||tol(p.Diff,p.FlowSupply-p.FlowReturn,10,25)],\n];\n\n// kontrole konfiguracji - lapia zla nastawe, nie regulacje\nif(p.SupplyH>10||p.SupplyV>10||p.ReturnH>10||p.ReturnV>10)\n r.push(['wymiary kanalu w METRACH (wpisano mm?)', 1, 0, false]);\nif(p.MinFlow>=p.MaxFlow) r.push(['MinFlow < MaxFlow', 1, 0, false]);\nif(p.CO2PropBand<=0) r.push(['PropBand > 0', 1, 0, false]);\nif(m===4) r.push(['UWAGA: tryb OFF (4) - regulacja wylaczona', 1, 0, false]);\nreturn r;"
 }

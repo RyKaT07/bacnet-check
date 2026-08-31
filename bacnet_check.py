@@ -232,7 +232,7 @@ PAGE = r"""<!doctype html><html lang="pl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>bacnet-check</title><style>
 :root{--bg:#0f1218;--card:#1a1f2b;--border:#2a3245;--txt:#dfe4ee;--muted:#8b95a5;--ok:#3fb27f;--bad:#e05555}
-body{margin:auto;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui;padding:1rem;max-width:1150px}
+body{margin:auto;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui;padding:1rem;max-width:1800px}
 h1{font-size:1.1rem}h2{font-size:.85rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:.2rem 0 .5rem}
 table{border-collapse:collapse;width:100%}td,th{padding:.28rem .55rem;border-bottom:1px solid var(--border);text-align:left}
 .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.8rem;margin:.8rem 0}
@@ -246,7 +246,7 @@ textarea{width:100%;background:#0d1117;color:#c9d4e6;border:1px solid var(--bord
 .ed{display:flex;background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .ed .gut{padding:.6rem .45rem;text-align:right;color:#4a5568;background:#0b0f14;
  font:12px/1.5 ui-monospace,monospace;white-space:pre;overflow:hidden;user-select:none}
-.ed .wrap{position:relative;flex:1;min-height:300px}
+.ed .wrap{position:relative;flex:1;min-height:clamp(300px,55vh,820px)}
 .ed pre,.ed textarea{position:absolute;inset:0;margin:0;padding:.6rem;border:0;box-sizing:border-box;
  font:12px/1.5 ui-monospace,monospace;white-space:pre;tab-size:2}
 .ed pre{pointer-events:none;overflow:hidden;color:#c9d4e6}
@@ -260,7 +260,11 @@ textarea{width:100%;background:#0d1117;color:#c9d4e6;border:1px solid var(--bord
 button{background:#1e4da6;color:#fff;border:0;border-radius:8px;padding:.3rem .8rem;cursor:pointer}
 button.sec{background:#3a4252}
 .ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}@media(max-width:850px){.grid{grid-template-columns:1fr}}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+@media(max-width:850px){.grid{grid-template-columns:1fr}}
+/* Tabela punktow ma stala szerokosc tresci - na szerokim ekranie caly nadmiar
+   miejsca oddajemy edytorowi regul zamiast dzielic strone po polowie. */
+@media(min-width:1250px){.grid{grid-template-columns:minmax(340px,26%) 1fr}}
 .muted{color:var(--muted)}
 </style></head><body>
 <h1>bacnet-check <span class="muted" style="font-weight:400">· punkty na zywo + profile regul</span></h1>

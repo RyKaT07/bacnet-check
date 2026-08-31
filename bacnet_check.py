@@ -240,6 +240,23 @@ input,select{background:#0d1117;color:var(--txt);border:1px solid var(--border);
 input[type=number]{width:90px}
 textarea{width:100%;background:#0d1117;color:#c9d4e6;border:1px solid var(--border);border-radius:8px;
  font:12px/1.5 ui-monospace,monospace;padding:.6rem;box-sizing:border-box}
+/* Edytor regul: kolorowanie robi <pre> pod spodem, textarea jest przezroczysta.
+   Obie warstwy MUSZA miec identyczna czcionke, padding i interlinie, inaczej
+   kursor rozjedzie sie z tekstem. */
+.ed{display:flex;background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.ed .gut{padding:.6rem .45rem;text-align:right;color:#4a5568;background:#0b0f14;
+ font:12px/1.5 ui-monospace,monospace;white-space:pre;overflow:hidden;user-select:none}
+.ed .wrap{position:relative;flex:1;min-height:300px}
+.ed pre,.ed textarea{position:absolute;inset:0;margin:0;padding:.6rem;border:0;box-sizing:border-box;
+ font:12px/1.5 ui-monospace,monospace;white-space:pre;tab-size:2}
+.ed pre{pointer-events:none;overflow:hidden;color:#c9d4e6}
+.ed textarea{background:transparent;color:transparent;caret-color:#fff;resize:none;outline:none;overflow:auto}
+.ed i{font-style:normal}
+.ed i.c{color:#6a7a8c;font-style:italic}
+.ed i.s{color:#9ece6a}
+.ed i.k{color:#7aa2f7}
+.ed i.n{color:#e0af68}
+.ed i.f{color:#7dcfff}
 button{background:#1e4da6;color:#fff;border:0;border-radius:8px;padding:.3rem .8rem;cursor:pointer}
 button.sec{background:#3a4252}
 .ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}
@@ -268,8 +285,11 @@ button.sec{background:#3a4252}
  <div style="margin:.5rem 0 .2rem" class="muted">mapowanie: nazwa punktu BACnet -> alias w regulach (JSON)
   <button class="sec" style="padding:.1rem .5rem;font-size:.8em" onclick="fillMapping()">Wypelnij z punktow</button></div>
  <textarea id="mapping" style="min-height:70px">{}</textarea>
- <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy) i prev (poprzedni odczyt), zwraca [opis, oczekiwane, odczytane, czyOK]</div>
- <textarea id="rules" style="min-height:230px"></textarea>
+ <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy) i prev (poprzedni odczyt), zwraca [opis, oczekiwane, odczytane, czyOK]
+  <button class="sec" style="padding:.1rem .5rem;font-size:.8em" onclick="formatRules()">Formatuj</button></div>
+ <div class="ed"><div class="gut" id="gut">1</div><div class="wrap">
+  <pre id="hl"></pre><textarea id="rules" spellcheck="false" oninput="syncEd()" onscroll="syncEd()"></textarea>
+ </div></div>
  <div style="margin-top:.3rem"><span id="rerr" class="bad"></span></div></div>
 <div class="card"><h2>Wynik regul</h2><table id="res"></table></div>
 </div></div>
@@ -282,7 +302,7 @@ async function loadProfiles(keep){
  $('profSel').innerHTML=Object.keys(PROFILES).map(n=>`<option ${n===cur?'selected':''}>${n}</option>`).join('');
  if(cur&&PROFILES[cur])applyProfile(cur)}
 function applyProfile(n){const p=PROFILES[n];localStorage.bcProfile=n;$('profName').value=n;
- $('mapping').value=JSON.stringify(p.mapping||{},null,1);$('rules').value=p.rules||''}
+ $('mapping').value=JSON.stringify(p.mapping||{},null,1);$('rules').value=p.rules||'';syncEd()}
 function pickProfile(){applyProfile($('profSel').value)}
 const STARTER=`// p = punkty po zmapowaniu aliasow (patrz pole mapowania powyzej).
 // Zwroc liste wierszy: [opis, oczekiwane, odczytane, czyOK]
@@ -290,7 +310,7 @@ const blisko=(a,b,proc)=>Math.abs(a-b)<=Math.abs(a)*proc/100+1;
 return [
  // ['co sprawdzam', p.alias_oczekiwany, p.alias_odczytany, blisko(p.alias_oczekiwany,p.alias_odczytany,5)],
 ];`;
-function newProfile(){$('profName').value='';$('mapping').value='{}';$('rules').value=STARTER;
+function newProfile(){$('profName').value='';$('mapping').value='{}';$('rules').value=STARTER;syncEd();
  $('rerr').textContent='wpisz nazwe i Zapisz profil'}
 // Wciaga nazwy punktow prosto ze sterownika - alias na start rowny nazwie,
 // prawa strone poprawiasz recznie na to, czego uzywasz w regulach.
@@ -315,6 +335,64 @@ async function connectDev(){
   body:JSON.stringify({addr:$('devAddr').value.trim(),devid:$('devId').value.trim()})});
  const d=await r.json();if(!d.ok)alert(d.error||'blad polaczenia')}
 let KEYS=[];
+// ── edytor regul: kolorowanie, numery linii, wciecia ─────────────────────
+const KW=/^(const|let|var|function|return|if|else|for|of|in|while|do|new|delete|typeof|instanceof|true|false|null|undefined|break|continue|switch|case|default|try|catch|finally|throw|class|this)$/;
+// Jeden przebieg po zrodle: komentarz | string | liczba | slowo. Kolejnosc ma
+// znaczenie - inaczej slowo wewnatrz stringu dostaloby kolor slowa kluczowego.
+const TOK=/(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][A-Za-z0-9_$]*)/g;
+function hl(src){
+ let out='',last=0,m;TOK.lastIndex=0;
+ while((m=TOK.exec(src))!==null){
+  out+=esc(src.slice(last,m.index));
+  const t=esc(m[0]);
+  if(m[1])out+='<i class=c>'+t+'</i>';
+  else if(m[2])out+='<i class=s>'+t+'</i>';
+  else if(m[3])out+='<i class=n>'+t+'</i>';
+  else if(KW.test(m[0]))out+='<i class=k>'+t+'</i>';
+  else out+=(src[TOK.lastIndex]==='(')?'<i class=f>'+t+'</i>':t;
+  last=TOK.lastIndex;
+ }
+ return out+esc(src.slice(last));
+}
+function syncEd(){
+ const ta=$('rules');if(!ta)return;
+ $('hl').innerHTML=hl(ta.value)+'\n';
+ const n=ta.value.split('\n').length;
+ let g='';for(let i=1;i<=n;i++)g+=i+'\n';
+ $('gut').textContent=g;
+ $('hl').scrollTop=$('gut').scrollTop=ta.scrollTop;$('hl').scrollLeft=ta.scrollLeft;
+}
+// Usuwa stringi i komentarze, zeby liczyc nawiasy tylko w kodzie.
+const bezTekstu=l=>l.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/.*$/,'')
+ .replace(/'(?:\\.|[^'\\])*'/g,"''").replace(/"(?:\\.|[^"\\])*"/g,'""').replace(/`(?:\\.|[^`\\])*`/g,'``');
+// Rownanie wciec wg glebokosci nawiasow. Zmienia WYLACZNIE biale znaki na
+// poczatku linii, wiec najgorsze co moze zrobic to brzydkie wciecie.
+function formatRules(){
+ const ta=$('rules');let d=0,wiszace=0;
+ ta.value=ta.value.split('\n').map(l=>{
+  const t=l.trim();if(!t)return '';
+  const kod=bezTekstu(t);
+  const zamykaNaStarcie=(kod.match(/^[}\])]+/)||[''])[0].length;
+  const poziom=Math.max(0,d-zamykaNaStarcie)+wiszace;
+  d=Math.max(0,d+(kod.match(/[{[(]/g)||[]).length-(kod.match(/[}\])]/g)||[]).length);
+  // if/for/while bez klamry: cialo to nastepna linia, wciecie tylko dla niej
+  wiszace=/^(if|for|while)\b[^{]*\)$|^else$/.test(kod)?1:0;
+  return '  '.repeat(poziom)+t;
+ }).join('\n');
+ syncEd();
+}
+document.addEventListener('keydown',e=>{
+ if(e.target.id!=='rules')return;
+ const ta=e.target,s=ta.selectionStart,en=ta.selectionEnd;
+ if(e.key==='Tab'){e.preventDefault();
+  ta.value=ta.value.slice(0,s)+'  '+ta.value.slice(en);
+  ta.selectionStart=ta.selectionEnd=s+2;syncEd()}
+ else if(e.key==='Enter'){e.preventDefault();
+  const linia=ta.value.slice(0,s).split('\n').pop();
+  const w=(linia.match(/^\s*/)||[''])[0]+(/[{[(]\s*$/.test(bezTekstu(linia))?'  ':'');
+  ta.value=ta.value.slice(0,s)+'\n'+w+ta.value.slice(en);
+  ta.selectionStart=ta.selectionEnd=s+1+w.length;syncEd()}
+});
 const nd=r=>!isFinite(+r[1])||!isFinite(+r[2]);
 const fmt=v=>!isFinite(+v)?'-':Math.abs(v)<10?(+v).toFixed(2):(+v).toFixed(1);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["BAC0>=2026.7.25"]
+# ///
 """bacnet-check - uniwersalny webowy podglad urzadzen BACnet z profilami regul.
 
 Aplikacja jest ogolna: laczy sie z dowolnym urzadzeniem BACnet/IP, pokazuje
@@ -6,11 +10,10 @@ punkty na zywo i pozwala zapisywac wartosci. Cala wiedza "co sprawdzac" siedzi
 w profilach (profiles/*.json): mapowanie nazw punktow na krotkie aliasy +
 reguly JS liczace "oczekiwane vs odczytane". VAV to tylko jeden z profili.
 
-Tryby:
-  python3 bacnet_check.py --sim                # symulowane urzadzenie VAV, bez sprzetu
-  python3 bacnet_check.py [--ip 192.168.1.10/24]   # realny BACnet; urzadzenie wybierasz w UI
+Tryby (uv sam ogarnia srodowisko - zaleznosci sa w naglowku powyzej):
+  uv run bacnet_check.py --sim                  # symulowane urzadzenie VAV, bez sprzetu
+  uv run bacnet_check.py [--ip 192.168.1.10/24] # realny BACnet; urzadzenie wybierasz w UI
 
-W trybie realnym wymaga:  pip install BAC0
 UI: http://localhost:8342
 """
 import argparse
@@ -81,8 +84,8 @@ def bacnet_init(ip):
     try:
         import BAC0
     except ImportError:
-        raise SystemExit('Brak biblioteki BAC0. Zainstaluj: pip install BAC0'
-                         '   (albo uruchom z --sim, bez sprzetu)')
+        raise SystemExit('Brak biblioteki BAC0. Uruchom przez: uv run bacnet_check.py'
+                         '   (albo z --sim, bez sprzetu)')
     BACNET = BAC0.lite(ip=ip) if ip else BAC0.lite()
     STATE.update(mode='bacnet', device=None)
 

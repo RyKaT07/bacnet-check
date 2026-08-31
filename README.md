@@ -4,14 +4,21 @@ Uniwersalny webowy podglad urzadzen BACnet/IP z **profilami regul** liczacych
 "oczekiwane vs odczytane". Jeden plik, biblioteka standardowa Pythona; BAC0
 potrzebne dopiero przy realnym sprzecie.
 
+Zaleznosci sa zapisane w naglowku `bacnet_check.py` (PEP 723), wiec **uv sam
+tworzy srodowisko** - nie ma czego instalowac ani zadnego venv do pilnowania.
+
 ```bash
-# symulowane urzadzenie (VAV), bez sprzetu - dziala od reki
-python3 bacnet_check.py --sim
+# symulowane urzadzenie (VAV), bez sprzetu
+uv run bacnet_check.py --sim
 
 # realny BACnet; urzadzenie wybierasz juz w przegladarce
-pip install BAC0
-python3 bacnet_check.py [--ip <ip-twojego-komputera>/24]
+uv run bacnet_check.py [--ip <ip-twojego-komputera>/24]
+
+# skrypt jest wykonywalny, wiec dziala tez tak:
+./bacnet_check.py --sim
 ```
+
+Nie masz uv? `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 UI: http://localhost:8342
 

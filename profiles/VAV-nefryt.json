@@ -1,5 +1,5 @@
 {
- "description": "Sterownik VAV Nefryt - rampa CO2, tryby AUTO/MIN/MAX/OFF, wyciag nadazny z DIFF",
+ "description": "VAV Nefryt: rampa CO2, tryby AUTO/MIN/MAX/OFF, wyciag nadazny z DIFF, wymiary per kanal (2N/2W)",
  "mapping": {
   "Cfg_Mode": "Mode",
   "Cfg_MinFlow": "MinFlow",
@@ -7,17 +7,33 @@
   "Cfg_CO2PropBand": "CO2PropBand",
   "Cfg_CO2Setpoint": "CO2Setpoint",
   "Cfg_Diff": "Diff",
+  "Cfg_Supply1H": "Supply1H",
+  "Cfg_Supply1V": "Supply1V",
+  "Cfg_Supply2H": "Supply2H",
+  "Cfg_Supply2V": "Supply2V",
+  "Cfg_Return1H": "Return1H",
+  "Cfg_Return1V": "Return1V",
+  "Cfg_Return2H": "Return2H",
+  "Cfg_Return2V": "Return2V",
+  "Cfg_KSupply1": "KSupply1",
+  "Cfg_KSupply2": "KSupply2",
+  "Cfg_KReturn1": "KReturn1",
+  "Cfg_KReturn2": "KReturn2",
+  "ActualCO2": "CO2",
+  "ActualSpeedSupply1": "SpeedSupply1",
+  "ActualSpeedSupply2": "SpeedSupply2",
+  "ActualSpeedReturn1": "SpeedReturn1",
+  "ActualSpeedReturn2": "SpeedReturn2",
+  "ActualFlowSupply": "FlowSupply",
+  "ActualFlowReturn": "FlowReturn",
+  "ActualPositionSupply": "PositionSupply",
+  "ActualPositionReturn": "PositionReturn",
   "Cfg_SupplyH": "SupplyH",
   "Cfg_SupplyV": "SupplyV",
   "Cfg_ReturnH": "ReturnH",
   "Cfg_ReturnV": "ReturnV",
-  "ActualCO2": "CO2",
   "ActualSpeedSupply": "SpeedSupply",
-  "ActualFlowSupply": "FlowSupply",
-  "ActualSpeedReturn": "SpeedReturn",
-  "ActualFlowReturn": "FlowReturn",
-  "ActualPositionSupply": "PositionSupply",
-  "ActualPositionReturn": "PositionReturn"
+  "ActualSpeedReturn": "SpeedReturn"
  },
- "rules": "// Sterownik VAV Nefryt wg layoutu (REGULACJA GLOWNA / NAWIEW / WYCIAG).\n// p = odczyt biezacy, prev = poprzedni. Wymiary kanalow w METRACH (0,75 x 0,15).\nconst jest=k=>typeof p[k]==='number'&&isFinite(p[k]);\nconst tol=(a,b,proc,abs)=>Math.abs(a-b)<=Math.abs(a)*proc/100+(abs||1);\nconst A_sup=p.SupplyH*p.SupplyV;                 // m2\nconst A_ext=p.ReturnH*p.ReturnV;\n\n// Przeplyw liczony z predkosci - tak liczy go sterownik (blok Multiply2):\n// suma predkosci x przekroj x 3600.\nconst q_sup_calc=p.SpeedSupply*A_sup*3600;\nconst q_ext_calc=p.SpeedReturn*A_ext*3600;\n\n// Przeplyw faktyczny: bierzemy z urzadzenia, a gdyby tego punktu nie bylo\n// (inny wariant programu), spadamy na wartosc policzona z predkosci.\nconst q_sup=jest('FlowSupply')?p.FlowSupply:q_sup_calc;\nconst q_ext=jest('FlowReturn')?p.FlowReturn:q_ext_calc;\n\n// Rampa CO2: od (nastawa - PropBand) do nastawy, z MinFlow do MaxFlow (LinearGraph, Limited)\nconst x1=p.CO2Setpoint-p.CO2PropBand;\nconst ramp=Math.min(1,Math.max(0,(p.CO2-x1)/(p.CO2PropBand||1)));\nconst sp_auto=p.MinFlow+ramp*(p.MaxFlow-p.MinFlow);\n\n// Tryb (NumericSelect): 1-AUTO, 2-MIN, 3-MAX, 4-OFF\nconst m=Number(p.Mode);\nconst sp_sup=m===1?sp_auto:m===2?p.MinFlow:m===3?p.MaxFlow:0;\nconst sp_ext=sp_sup-p.Diff;                      // nastawa nadazna za nawiewem\n\n// Regulacje oceniamy dopiero po ustabilizowaniu - przepustnica dojezdza do nowej\n// nastawy kilkadziesiat sekund, inaczej ROZJAZD migalby caly czas.\nconst stoi=(a,b)=>tol(a,b,1,5);\n// przeplyw poprzedni liczymy tak samo jak biezacy, inaczej przy braku punktu\n// FlowSupply porownywalibysmy wartosc sama ze soba i wszystko udawaloby stan ustalony\nconst q_sup_prev=jest('FlowSupply')?prev.FlowSupply:prev.SpeedSupply*A_sup*3600;\nconst q_ext_prev=jest('FlowReturn')?prev.FlowReturn:prev.SpeedReturn*A_ext*3600;\nconst ustalone=stoi(q_sup,q_sup_prev)&&stoi(q_ext,q_ext_prev);\nconst kraniec=poz=>!jest('PositionSupply')?false:(poz>=99||poz<=1);\nconst pomin=poz=>!ustalone||kraniec(poz);\n\nconst r=[];\n\n// Te dwie reguly sprawdzaja wlasny rachunek sterownika, wiec maja sens tylko\n// wtedy, gdy urzadzenie podaje i predkosc, i przeplyw.\nif(jest('FlowSupply')&&jest('SpeedSupply'))\n r.push(['przeplyw nawiewu = predkosc x przekroj x 3600', q_sup_calc, p.FlowSupply, tol(q_sup_calc,p.FlowSupply,3)]);\nif(jest('FlowReturn')&&jest('SpeedReturn'))\n r.push(['przeplyw wyciagu = predkosc x przekroj x 3600', q_ext_calc, p.FlowReturn, tol(q_ext_calc,p.FlowReturn,3)]);\n\nr.push(['nastawa nawiewu wg rampy CO2 i trybu', sp_sup, q_sup,\n   pomin(p.PositionSupply)||tol(sp_sup,q_sup,10,20)]);\nr.push(['wyciag nadaza za nawiewem (nawiew - DIFF)', sp_ext, q_ext,\n   pomin(p.PositionReturn)||tol(sp_ext,q_ext,10,20)]);\nr.push(['roznica nawiew-wyciag = DIFF', p.Diff, q_sup-q_ext,\n   pomin(p.PositionSupply)||pomin(p.PositionReturn)||tol(p.Diff,q_sup-q_ext,10,25)]);\n\n// Brakujace punkty zglaszamy wprost, zeby nie udawaly bledu regulacji.\nconst wymagane=['Mode','MinFlow','MaxFlow','CO2PropBand','CO2Setpoint','Diff',\n                'SupplyH','SupplyV','ReturnH','ReturnV','CO2','SpeedSupply','SpeedReturn'];\nconst brak=wymagane.filter(k=>!jest(k));\nif(brak.length) r.push(['BRAK PUNKTOW (sprawdz mapowanie): '+brak.join(', '), 0, brak.length, false]);\n\n// Kontrole konfiguracji - lapia zla nastawe, nie regulacje.\nif(p.SupplyH>10||p.SupplyV>10||p.ReturnH>10||p.ReturnV>10)\n r.push(['wymiary kanalu w METRACH (wpisano mm?)', 1, 0, false]);\nif(p.MinFlow>=p.MaxFlow) r.push(['MinFlow < MaxFlow', 1, 0, false]);\nif(p.CO2PropBand<=0) r.push(['PropBand > 0', 1, 0, false]);\nif(m===4) r.push(['UWAGA: tryb OFF (4) - regulacja wylaczona', 1, 0, false]);\nreturn r;"
+ "rules": "// Sterownik VAV Nefryt. p = odczyt biezacy, prev = poprzedni.\n// Wymiary kanalow w METRACH. Kanal nieuzywany ma wymiary 0 i nie wnosi nic do sumy.\nconst jest=k=>typeof p[k]==='number'&&isFinite(p[k]);\nconst tol=(a,b,proc,abs)=>Math.abs(a-b)<=Math.abs(a)*proc/100+(abs||1);\n\n// Kanaly danej strony: obsluguje i wariant per kanal (Supply1/Supply2),\n// i stary wariant z jedna para wymiarow (Supply).\nfunction kanaly(strona, zrodlo){\n const out=[];\n for(const i of ['1','2','']){\n  const H=strona+i+'H', V=strona+i+'V', v='Speed'+strona+i, k='K'+strona+i;\n  if(jest(H)&&jest(V)&&jest(v)&&p[H]*p[V]>0)\n   out.push({A:p[H]*p[V], v:(zrodlo||p)[v], k:jest(k)?p[k]:1});\n }\n return out;\n}\nconst przeplyw=ks=>ks.reduce((s,c)=>s+c.k*c.v*c.A*3600,0);\nconst S=kanaly('Supply'), R=kanaly('Return');\n\n// Przeplyw policzony poprawnie: suma v_i * A_i (kazdy kanal ze swoim przekrojem)\nconst q_sup_calc=przeplyw(S), q_ext_calc=przeplyw(R);\n// Przeplyw z urzadzenia; gdy brak punktu - spadamy na wartosc policzona\nconst q_sup=jest('FlowSupply')?p.FlowSupply:q_sup_calc;\nconst q_ext=jest('FlowReturn')?p.FlowReturn:q_ext_calc;\n\n// Rampa CO2 i tryb\nconst x1=p.CO2Setpoint-p.CO2PropBand;\nconst ramp=Math.min(1,Math.max(0,(p.CO2-x1)/(p.CO2PropBand||1)));\nconst sp_auto=p.MinFlow+ramp*(p.MaxFlow-p.MinFlow);\nconst m=Number(p.Mode);\nconst sp_sup=m===1?sp_auto:m===2?p.MinFlow:m===3?p.MaxFlow:0;\nconst sp_ext=sp_sup-p.Diff;\n\n// Regulacje oceniamy dopiero po ustabilizowaniu; przeplyw poprzedni liczymy\n// tak samo jak biezacy, inaczej przy braku FlowSupply porownywalibysmy go ze soba.\nconst stoi=(a,b)=>tol(a,b,1,5);\nconst q_sup_prev=jest('FlowSupply')?prev.FlowSupply:przeplyw(kanaly('Supply',prev));\nconst q_ext_prev=jest('FlowReturn')?prev.FlowReturn:przeplyw(kanaly('Return',prev));\nconst ustalone=stoi(q_sup,q_sup_prev)&&stoi(q_ext,q_ext_prev);\nconst kraniec=poz=>jest('PositionSupply')?(poz>=99||poz<=1):false;\nconst pomin=poz=>!ustalone||kraniec(poz);\n\nconst r=[];\nif(jest('FlowSupply')&&S.length)\n r.push(['przeplyw nawiewu = suma (predkosc x przekroj kanalu) x 3600', q_sup_calc, p.FlowSupply, tol(q_sup_calc,p.FlowSupply,3)]);\nif(jest('FlowReturn')&&R.length)\n r.push(['przeplyw wyciagu = suma (predkosc x przekroj kanalu) x 3600', q_ext_calc, p.FlowReturn, tol(q_ext_calc,p.FlowReturn,3)]);\nr.push(['nastawa nawiewu wg rampy CO2 i trybu', sp_sup, q_sup, pomin(p.PositionSupply)||tol(sp_sup,q_sup,10,20)]);\nr.push(['wyciag nadaza za nawiewem (nawiew - DIFF)', sp_ext, q_ext, pomin(p.PositionReturn)||tol(sp_ext,q_ext,10,20)]);\nr.push(['roznica nawiew-wyciag = DIFF', p.Diff, q_sup-q_ext,\n  pomin(p.PositionSupply)||pomin(p.PositionReturn)||tol(p.Diff,q_sup-q_ext,10,25)]);\n\n// Lapie stara implementacje: (v1+v2) pomnozone przez JEDEN przekroj.\n// Daje falszywy przeplyw wszedzie tam, gdzie oba kanaly nie sa identyczne.\nfunction sumowanieBledne(ks, flow, opis){\n if(ks.length<2||!isFinite(flow)) return;\n const vsum=ks.reduce((s,c)=>s+c.k*c.v,0);\n const dobrze=przeplyw(ks);\n for(const c of ks){\n  const zle=vsum*c.A*3600;\n  if(tol(zle,flow,3)&&!tol(dobrze,flow,3))\n   r.push([opis, dobrze, flow, false]);\n }\n}\nsumowanieBledne(S, p.FlowSupply, 'BLAD: nawiew sumuje predkosci i mnozy przez JEDEN przekroj');\nsumowanieBledne(R, p.FlowReturn, 'BLAD: wyciag sumuje predkosci i mnozy przez JEDEN przekroj');\n\n// Brakujace punkty zglaszamy wprost, zeby nie udawaly bledu regulacji.\nconst wymagane=['Mode','MinFlow','MaxFlow','CO2PropBand','CO2Setpoint','Diff','CO2'];\nconst brak=wymagane.filter(k=>!jest(k));\nif(brak.length) r.push(['BRAK PUNKTOW (sprawdz mapowanie): '+brak.join(', '), 0, brak.length, false]);\nif(!S.length) r.push(['BRAK kanalu nawiewnego (wymiary + predkosc)', 1, 0, false]);\nif(!R.length) r.push(['BRAK kanalu wyciagowego (wymiary + predkosc)', 1, 0, false]);\n\n// Kontrole konfiguracji\nconst zaDuzy=[...S,...R].some(c=>c.A>10);\nif(zaDuzy) r.push(['wymiary kanalu w METRACH (wpisano mm?)', 1, 0, false]);\nif(p.MinFlow>=p.MaxFlow) r.push(['MinFlow < MaxFlow', 1, 0, false]);\nif(p.CO2PropBand<=0) r.push(['PropBand > 0', 1, 0, false]);\nif(m===4) r.push(['UWAGA: tryb OFF (4) - regulacja wylaczona', 1, 0, false]);\nreturn r;"
 }

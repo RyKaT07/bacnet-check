@@ -12,7 +12,11 @@ tworzy srodowisko** - nie ma czego instalowac ani zadnego venv do pilnowania.
 uv run bacnet_check.py --sim example-device
 
 # realny BACnet; urzadzenie wybierasz juz w przegladarce
+# UWAGA: --ip to adres TWOJEGO komputera z maska, nie sterownika
 uv run bacnet_check.py [--ip <ip-twojego-komputera>/24]
+
+# gdy port 47808 trzyma inny program (np. YABE) - wlasny port lokalny
+uv run bacnet_check.py --ip <ip-twojego-komputera>/24 --bport 47809
 
 # wlasne definicje urzadzen trzymane poza narzedziem
 uv run bacnet_check.py --sim moj-sterownik --sims ~/moje/sims --profiles ~/moje/profiles

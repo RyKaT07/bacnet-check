@@ -105,28 +105,60 @@ def on_loop(coro, timeout=180):
     return asyncio.run_coroutine_threadsafe(coro, LOOP).result(timeout)
 
 
-def bacnet_init(ip):
+def local_ip():
+    """Best guess at this machine's address on the way out, for error hints."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+            sk.connect(('192.0.2.1', 9))       # TEST-NET-1, nothing is sent
+            return sk.getsockname()[0] + '/24'
+    except OSError:
+        return 'nieznany adres'
+
+
+def bacnet_init(ip, bport=None):
     try:
         import BAC0  # noqa: F401
     except ImportError:
         raise SystemExit('Brak biblioteki BAC0. Uruchom przez: uv run bacnet_check.py'
                          '   (albo z --sim, bez sprzetu)')
     loop_start()
-    on_loop(_bacnet_init(ip))
+    on_loop(_bacnet_init(ip, bport))
     STATE.update(mode='bacnet', device=None)
 
 
-async def _bacnet_init(ip):
+async def _bacnet_init(ip, bport=None):
     global BACNET
     import BAC0
-    BACNET = BAC0.lite(ip=ip) if ip else BAC0.lite()
+    # Only one program can hold UDP 47808 on an interface. --bport lets this run
+    # alongside another BACnet tool; discovery by broadcast then may not answer,
+    # but connecting to a device by its address still works.
+    kw = {}
+    if ip:
+        kw['ip'] = ip
+    if bport:
+        kw['port'] = int(bport)
+    try:
+        BACNET = BAC0.lite(**kw)
+    except Exception as exc:
+        # BAC0 blames the port first, but the usual cause is passing the
+        # controller's address instead of this machine's. Say both, with a hint.
+        raise RuntimeError(
+            f'Nie udalo sie zajac interfejsu {ip or "(domyslny)"} na porcie '
+            f'{bport or 47808}. Najczestsze przyczyny:\n'
+            f'  1) w --ip podano adres STEROWNIKA zamiast tego komputera; '
+            f'ten komputer ma {local_ip()}\n'
+            f'  2) port {bport or 47808} trzyma inny program (np. YABE) - '
+            f'zamknij go albo uruchom z --bport 47809\n'
+            f'  3) zapora blokuje UDP {bport or 47808}\n'
+            f'({exc})') from exc
     # The constructor only schedules startup; wait for the stack to come up.
     for _ in range(300):
         if getattr(BACNET, '_initialized', False):
             await asyncio.sleep(1)
             return
         await asyncio.sleep(0.1)
-    raise RuntimeError('BAC0 nie wystartowal w 30 s - sprawdz --ip i uprawnienia do portu 47808')
+    raise RuntimeError('BAC0 nie wystartowal w 30 s - sprawdz --ip i czy port 47808 jest wolny')
 
 
 def bacnet_discover():
@@ -501,6 +533,9 @@ if __name__ == '__main__':
     ap.add_argument('--ip', help='lokalny interfejs BACnet, np. 192.168.1.10/24')
     ap.add_argument('--profiles', metavar='KATALOG', help='katalog z profilami regul (domyslnie ./profiles)')
     ap.add_argument('--sims', metavar='KATALOG', help='katalog z symulatorami (domyslnie ./sims)')
+    ap.add_argument('--bport', type=int, metavar='PORT',
+                    help='lokalny port BACnet (domyslnie 47808); uzyj np. 47809, '
+                         'gdy 47808 trzyma inny program, np. YABE')
     ap.add_argument('--port', type=int, default=8342)
     ARGS = ap.parse_args()
     # module-level dirs, reassigned from the flags
@@ -514,7 +549,7 @@ if __name__ == '__main__':
         threading.Thread(target=sim_loop, daemon=True).start()
         where = f'SYMULACJA {name}'
     else:
-        bacnet_init(ARGS.ip)
+        bacnet_init(ARGS.ip, ARGS.bport)
         where = 'BACnet'
     print(f'bacnet-check: http://localhost:{ARGS.port}  ({where})')
     ThreadingHTTPServer(('0.0.0.0', ARGS.port), H).serve_forever()

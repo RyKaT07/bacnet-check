@@ -166,15 +166,28 @@ def bacnet_discover():
 
 
 async def _discover():
-    BACNET.discover()
-    await asyncio.sleep(3)          # let the who-is answers arrive
-    rows = await BACNET._devices(_return_list=True)
+    # discover() only schedules the scan, so await the coroutine behind it instead
+    # of sleeping for a guessed interval - a real scan takes several seconds.
+    try:
+        await BACNET._discover()
+    except Exception:
+        pass
+    # Read the raw who-is answers rather than BAC0's table: that table performs an
+    # extra name read per device and DROPS every device that does not answer it,
+    # which hides controllers that are plainly there.
     out = []
-    for r in (rows or []):
-        try:  # (name, vendor, device instance, address, network)
-            out.append({'name': str(r[0]), 'vendor': str(r[1]),
-                        'devid': int(r[2]), 'addr': str(r[3])})
-        except (ValueError, IndexError, TypeError):
+    for key, info in (getattr(BACNET, 'discoveredDevices', None) or {}).items():
+        try:
+            _, instance = info['object_instance']
+            out.append({'name': str(key), 'vendor': str(info.get('vendor_id') or ''),
+                        'devid': int(instance), 'addr': str(info['address'])})
+        except (ValueError, KeyError, TypeError):
+            pass
+    # Names are a nicety; a device that will not answer stays on the list anyway.
+    for d in out:
+        try:
+            d['name'] = str(await BACNET.read(f"{d['addr']} device:{d['devid']} objectName"))
+        except Exception:
             pass
     return out
 

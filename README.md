@@ -45,9 +45,9 @@ przycisk **Formatuj** (rownanie wciec wg zagniezdzenia).
 
 Repozytorium zawiera wylacznie narzedzie i **jedno generyczne urzadzenie
 przykladowe** (`example-device`), ktore dokumentuje kontrakt. Wlasne sterowniki
-trzymasz u siebie i wskazujesz przez `--profiles` / `--sims`.
-
-Przyklad takiego zestawu: [bacnet-vav-nefryt](https://github.com/RyKaT07/bacnet-vav-nefryt).
+trzymasz u siebie, w osobnym katalogu albo wlasnym repozytorium, i wskazujesz
+je przez `--profiles` / `--sims`. Dzieki temu aktualizacja narzedzia nigdy nie
+rusza Twoich definicji, a definicje nie zasmiecaja narzedzia.
 
 ## Symulatory (`sims/*.py`)
 

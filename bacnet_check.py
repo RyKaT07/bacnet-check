@@ -42,7 +42,7 @@ LOOP = None      # asyncio loop dedicated to BAC0
 ARGS = None
 
 
-# ── simulated device: a plain file in sims/ (see sims/vav-nefryt.py) ──────
+# ── simulated device: a plain file in sims/ (see sims/example-device.py) ─
 SIM = None          # loaded simulator module
 SIM_PARAMS = {}     # writable points of the simulator
 
@@ -51,7 +51,7 @@ def load_sim(name):
     global SIM, SIM_PARAMS
     files = sorted(SIM_DIR.glob('*.py'))
     if not files:
-        raise SystemExit(f'Brak symulatorow w {SIM_DIR}. Skopiuj jeden z examples/sims/ '
+        raise SystemExit(f'Brak symulatorow w {SIM_DIR}. Skopiuj sims/example-device.py '
                          'albo wskaz swoj katalog przez --sims')
     if name:
         path = SIM_DIR / f'{name}.py'

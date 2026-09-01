@@ -20,6 +20,32 @@ uv run bacnet_check.py --sim moj-sterownik --sims ~/moje/sims --profiles ~/moje/
 
 Nie masz uv? `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
+## Windows
+
+Instalacja uv: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`,
+potem otworz PowerShell na nowo. Uruchamianie przez `uv run bacnet_check.py ...`
+(pierwsza linijka skryptu dziala tylko na Linux/macOS).
+
+Jesli uv zglosi **"Zasady kontroli aplikacji zablokowaly ten plik" (os error 4551)**,
+to Windows App Control blokuje Pythona pobranego przez uv. Zainstaluj Pythona
+(python.org albo Microsoft Store) i albo zabron uv pobierania wlasnego:
+
+```powershell
+$env:UV_PYTHON_DOWNLOADS = "never"
+uv run bacnet_check.py --sim example-device
+```
+
+albo pomin uv calkowicie - **tryb symulacji nie ma zadnych zaleznosci**:
+
+```powershell
+python bacnet_check.py --sim example-device
+pip install BAC0        # dopiero do realnego sterownika
+python bacnet_check.py --ip 192.168.1.10/24
+```
+
+Przy pierwszym polaczeniu z realnym BACnet zapora spyta o dostep do sieci -
+trzeba pozwolic (sieci prywatne), inaczej UDP 47808 nie zadziala.
+
 UI: http://localhost:8342
 
 ## Jak to dziala

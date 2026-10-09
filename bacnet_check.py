@@ -400,7 +400,7 @@ button.sec{background:#3a4252}
  <div style="margin:.5rem 0 .2rem" class="muted">mapowanie: nazwa punktu BACnet -> alias w regulach (JSON)
   <button class="sec" style="padding:.1rem .5rem;font-size:.8em" onclick="fillMapping()">Wypelnij z punktow</button></div>
  <textarea id="mapping" style="min-height:70px">{}</textarea>
- <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy) i prev (poprzedni odczyt), zwraca [opis, oczekiwane, odczytane, czyOK]; czyOK jako tekst = pominiete z tym powodem
+ <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy), prev (poprzedni odczyt) i hist (odczyty z 2 min, pole t w ms), zwraca [opis, oczekiwane, odczytane, czyOK]; czyOK jako tekst = pominiete z tym powodem
   <button class="sec" style="padding:.1rem .5rem;font-size:.8em" onclick="formatRules()">Formatuj</button></div>
  <div class="ed"><div class="gut" id="gut">1</div><div class="wrap">
   <pre id="hl"></pre><textarea id="rules" spellcheck="false" oninput="syncEd()" onscroll="syncEd()"></textarea>
@@ -410,7 +410,7 @@ button.sec{background:#3a4252}
 </div></div>
 <script>
 const $=id=>document.getElementById(id);
-let PROFILES={},PREV=null,TBLSIG='';
+let PROFILES={},PREV=null,TBLSIG='',HIST=[];
 async function loadProfiles(keep){
  PROFILES=await (await fetch('/api/profiles')).json();
  const cur=keep||localStorage.bcProfile||Object.keys(PROFILES)[0]||'';
@@ -547,7 +547,9 @@ async function tick(){
   let out=[],hint='';
   const src=$('rules').value;
   try{
-   out=new Function('p','prev',src)(p,PREV||p)||[];
+   // hist: readings from the last 2 minutes, each with its time t (ms), newest last.
+   const now=Date.now();HIST=HIST.filter(h=>h.t>now-120000);HIST.push({...p,t:now});
+   out=new Function('p','prev','hist',src)(p,PREV||p,HIST)||[];
    // Most common mistake: only the calculations pasted in, without `return [...]`.
    if(!out.length&&src.trim()&&!/\breturn\b/.test(src))
     hint='reguly nic nie zwracaja - brakuje na koncu: return [ [opis, oczekiwane, odczytane, czyOK] ];';

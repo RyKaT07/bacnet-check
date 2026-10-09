@@ -61,8 +61,9 @@ Narzedzie nic nie wie o urzadzeniach. Zna tylko trzy rzeczy:
 2. **Mapowanie** - nazwa punktu w sterowniku na krotki alias uzywany w regulach,
    dzieki czemu ta sama regula dziala na sterownikach roznych producentow.
    Mapowanie jest opcjonalne: bez niego regula siega wprost po nazwe z urzadzenia.
-3. **Reguly** - blok JavaScript, ktory dostaje `p` (biezacy odczyt) i `prev`
-   (poprzedni) i zwraca wiersze `[opis, oczekiwane, odczytane, czyOK]`.
+3. **Reguly** - blok JavaScript, ktory dostaje `p` (biezacy odczyt), `prev`
+   (poprzedni) i `hist` (odczyty z ostatnich 2 minut, kazdy z czasem `t` w ms, najnowszy
+   na koncu; do srednich i oceny stabilnosci) i zwraca wiersze `[opis, oczekiwane, odczytane, czyOK]`.
    `czyOK` jako tekst zamiast true/false oznacza sprawdzenie pominiete; strona pokazuje ten tekst
    zamiast OK, np. `'pominiete: przepustnica 100%'`.
    Wynik to tabela OK / ROZJAZD / brak danych.

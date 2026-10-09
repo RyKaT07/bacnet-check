@@ -220,9 +220,14 @@ async def _poll(dev, generation):
         for pt in dev.points:
             try:
                 v = pt.lastValue
+                unit = str(getattr(pt.properties, 'units_state', '') or '')
+                if not isinstance(v, (int, float)):
+                    # Multi-state points read as '1: Auto'; rules need the state number.
+                    m = re.match(r'\s*(-?\d+)\s*:\s*(.*)', str(v))
+                    v, unit = (int(m.group(1)), f'{m.group(2)}  {unit}') if m else (str(v), unit)
                 snap[pt.properties.name] = {
-                    'value': v if isinstance(v, (int, float)) else str(v),
-                    'unit': str(getattr(pt.properties, 'units_state', '') or ''),
+                    'value': v,
+                    'unit': unit,
                     # BAC0 names types the bacpypes3 way: 'analog-value', 'multi-state-value'.
                     'writable': any(k in str(pt.properties.type).lower()
                                     for k in ('value', 'output')),

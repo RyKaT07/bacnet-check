@@ -224,7 +224,10 @@ async def _poll(dev, generation):
                 if not isinstance(v, (int, float)):
                     # Multi-state points read as '1: Auto'; rules need the state number.
                     m = re.match(r'\s*(-?\d+)\s*:\s*(.*)', str(v))
-                    v, unit = (int(m.group(1)), f'{m.group(2)}  {unit}') if m else (str(v), unit)
+                    states = getattr(pt.properties, 'units_state', None)
+                    if m and isinstance(states, (list, tuple)):
+                        unit = m.group(2) + ' · ' + ', '.join(f'{i} {s}' for i, s in enumerate(states, 1))
+                    v = int(m.group(1)) if m else str(v)
                 snap[pt.properties.name] = {
                     'value': v,
                     'unit': unit,
@@ -344,6 +347,8 @@ table{border-collapse:collapse;width:100%}td,th{padding:.28rem .55rem;border-bot
 .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.8rem;margin:.8rem 0}
 input,select{background:#0d1117;color:var(--txt);border:1px solid var(--border);border-radius:6px;padding:.2rem .45rem}
 input[type=number]{width:90px}
+td.w{white-space:nowrap}td.w input{width:78px}td.w button{padding:.15rem .5rem;margin-left:.25rem}
+button.dirty{background:#1e4da6}button.done{background:var(--ok)}
 textarea{width:100%;background:#0d1117;color:#c9d4e6;border:1px solid var(--border);border-radius:8px;
  font:12px/1.5 ui-monospace,monospace;padding:.6rem;box-sizing:border-box}
 /* Rules editor: a <pre> underneath does the highlighting, the textarea on top
@@ -370,7 +375,7 @@ button.sec{background:#3a4252}
 @media(max-width:850px){.grid{grid-template-columns:1fr}}
 /* The points table needs a fixed content width, so on a wide screen all the
    spare room goes to the rules editor instead of splitting the page in half. */
-@media(min-width:1250px){.grid{grid-template-columns:minmax(340px,26%) 1fr}}
+@media(min-width:1250px){.grid{grid-template-columns:minmax(480px,34%) 1fr}}
 .muted{color:var(--muted)}
 </style></head><body>
 <h1>bacnet-check <span class="muted" style="font-weight:400">· punkty na zywo + profile regul</span></h1>
@@ -405,7 +410,7 @@ button.sec{background:#3a4252}
 </div></div>
 <script>
 const $=id=>document.getElementById(id);
-let PROFILES={},editing=null,PREV=null;
+let PROFILES={},PREV=null,TBLSIG='';
 async function loadProfiles(keep){
  PROFILES=await (await fetch('/api/profiles')).json();
  const cur=keep||localStorage.bcProfile||Object.keys(PROFILES)[0]||'';
@@ -504,12 +509,17 @@ document.addEventListener('keydown',e=>{
   ta.selectionStart=ta.selectionEnd=s+1+indent.length;syncEd()}
 });
 const nd=r=>!isFinite(+r[1])||!isFinite(+r[2]);
-const fmt=v=>!isFinite(+v)?'-':Math.abs(v)<10?(+v).toFixed(2):(+v).toFixed(1);
+const fmt=v=>!isFinite(+v)?'-':Number.isInteger(+v)?String(+v):Math.abs(v)<10?(+v).toFixed(2):(+v).toFixed(1);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-async function writePoint(i,el){
+async function writePoint(i){
+ const el=$('in'+i),b=$('sb'+i),v=parseFloat(el.value.replace(',','.'));
+ if(!isFinite(v)){alert('to nie jest liczba: '+el.value);return}
  const r=await fetch('/api/write',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({name:KEYS[i],value:parseFloat(el.value)})});
- const d=await r.json();if(!d.ok)alert('blad zapisu: '+(d.error||''))}
+  body:JSON.stringify({name:KEYS[i],value:v})});
+ const d=await r.json();
+ if(!d.ok){alert('blad zapisu: '+(d.error||''));return}
+ delete el.dataset.dirty;el.blur();b.className='done';b.textContent='zapisano';
+ setTimeout(()=>{b.className='sec';b.textContent='zapisz'},2500)}
 async function tick(){
  try{
   const st=await (await fetch('/api/state')).json();
@@ -517,13 +527,21 @@ async function tick(){
    :(st.device?'polaczono: '+st.device:'brak polaczenia');
   $('connectUi').style.display=st.mode==='sim'?'none':'inline';
   const pts=await (await fetch('/api/points')).json();
-  KEYS=Object.keys(pts);
-  const rows=Object.entries(pts).map(([k,v],i)=>{
-   const inp=v.writable?`<input type="number" step="any" value="${typeof v.value==='number'?v.value:parseInt(v.value)||''}"
-     onfocus="editing=${i}" onblur="editing=null" onchange="writePoint(${i},this)">`:'';
-   return `<tr><td>${esc(k)}</td><td style="text-align:right">${typeof v.value==='number'?fmt(v.value):esc(v.value)}</td>
-    <td>${esc(v.unit||'')}</td><td>${inp}</td></tr>`});
-  if(editing===null)$('tbl').innerHTML='<tr><th>punkt</th><th>wartosc</th><th>jedn.</th><th>zapis</th></tr>'+rows.join('');
+  const sig=Object.entries(pts).map(([k,v])=>k+(v.writable?'*':'')).join('|');
+  if(sig!==TBLSIG){
+   TBLSIG=sig;KEYS=Object.keys(pts);
+   $('tbl').innerHTML='<tr><th>punkt</th><th>wartosc</th><th>jedn.</th><th>zapis</th></tr>'+KEYS.map((k,i)=>
+    `<tr><td>${esc(k)}</td><td id="v${i}" style="text-align:right"></td><td id="u${i}" class="muted"></td>
+     <td class="w">${pts[k].writable?`<input id="in${i}" inputmode="decimal"
+      oninput="this.dataset.dirty=1;$('sb${i}').className='dirty'"
+      onkeydown="if(event.key==='Enter')writePoint(${i});if(event.key==='Escape'){delete this.dataset.dirty;$('sb${i}').className='sec';this.blur()}"
+      ><button id="sb${i}" class="sec" onclick="writePoint(${i})">zapisz</button>`:''}</td></tr>`).join('')}
+  KEYS.forEach((k,i)=>{const v=pts[k]||{};
+   $('v'+i).textContent=typeof v.value==='number'?fmt(v.value):(v.value??'');
+   $('u'+i).textContent=v.unit==='no-units'?'':(v.unit||'');
+   const el=$('in'+i);
+   if(el&&!el.dataset.dirty&&document.activeElement!==el)
+    el.value=typeof v.value==='number'?String(+v.value.toPrecision(6)):''});
   let mapping={};try{mapping=JSON.parse($('mapping').value||'{}')}catch(e){}
   const p={};for(const[k,v]of Object.entries(pts))p[mapping[k]||k]=v.value;
   let out=[],hint='';

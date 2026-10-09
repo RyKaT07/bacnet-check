@@ -400,7 +400,7 @@ button.sec{background:#3a4252}
  <div style="margin:.5rem 0 .2rem" class="muted">mapowanie: nazwa punktu BACnet -> alias w regulach (JSON)
   <button class="sec" style="padding:.1rem .5rem;font-size:.8em" onclick="fillMapping()">Wypelnij z punktow</button></div>
  <textarea id="mapping" style="min-height:70px">{}</textarea>
- <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy) i prev (poprzedni odczyt), zwraca [opis, oczekiwane, odczytane, czyOK]
+ <div style="margin:.5rem 0 .2rem" class="muted">reguly: JS, dostaje p (aliasy) i prev (poprzedni odczyt), zwraca [opis, oczekiwane, odczytane, czyOK]; czyOK jako tekst = pominiete z tym powodem
   <button class="sec" style="padding:.1rem .5rem;font-size:.8em" onclick="formatRules()">Formatuj</button></div>
  <div class="ed"><div class="gut" id="gut">1</div><div class="wrap">
   <pre id="hl"></pre><textarea id="rules" spellcheck="false" oninput="syncEd()" onscroll="syncEd()"></textarea>
@@ -557,7 +557,8 @@ async function tick(){
   $('res').innerHTML=out.length?'<tr><th>regula</th><th>oczekiwane</th><th>odczytane</th><th></th></tr>'+
    out.map(r=>`<tr><td>${r[0]}</td><td style="text-align:right">${fmt(+r[1])}</td>
     <td style="text-align:right">${fmt(+r[2])}</td>
-    <td class="${nd(r)?'muted':r[3]?'ok':'bad'}">${nd(r)?'brak danych':r[3]?'OK':'ROZJAZD'}</td></tr>`).join('')
+    ${typeof r[3]==='string'?`<td class="muted">${esc(r[3])}</td>`
+     :`<td class="${nd(r)?'muted':r[3]?'ok':'bad'}">${nd(r)?'brak danych':r[3]?'OK':'ROZJAZD'}</td>`}</tr>`).join('')
    :'<tr><td class="muted">profil bez regul albo brak punktow</td></tr>';
  }catch(e){}
  setTimeout(tick,1500)}

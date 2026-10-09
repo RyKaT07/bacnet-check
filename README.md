@@ -57,12 +57,14 @@ UI: http://localhost:8342
 Narzedzie nic nie wie o urzadzeniach. Zna tylko trzy rzeczy:
 
 1. **Punkty** - odczytywane cyklicznie i pokazywane w tabeli; zapisywalne
-   edytujesz wprost w tabeli (zapis idzie do urzadzenia od razu).
+   zmieniasz w tabeli: wpisz wartosc i kliknij "zapisz" albo Enter, wtedy idzie do urzadzenia.
 2. **Mapowanie** - nazwa punktu w sterowniku na krotki alias uzywany w regulach,
    dzieki czemu ta sama regula dziala na sterownikach roznych producentow.
    Mapowanie jest opcjonalne: bez niego regula siega wprost po nazwe z urzadzenia.
 3. **Reguly** - blok JavaScript, ktory dostaje `p` (biezacy odczyt) i `prev`
    (poprzedni) i zwraca wiersze `[opis, oczekiwane, odczytane, czyOK]`.
+   `czyOK` jako tekst zamiast true/false oznacza sprawdzenie pominiete; strona pokazuje ten tekst
+   zamiast OK, np. `'pominiete: przepustnica 100%'`.
    Wynik to tabela OK / ROZJAZD / brak danych.
 
 Mapowanie i reguly razem tworza **profil** (`profiles/*.json`), edytowany w

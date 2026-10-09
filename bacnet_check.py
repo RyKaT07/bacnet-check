@@ -223,8 +223,9 @@ async def _poll(dev, generation):
                 snap[pt.properties.name] = {
                     'value': v if isinstance(v, (int, float)) else str(v),
                     'unit': str(getattr(pt.properties, 'units_state', '') or ''),
-                    'writable': ('Output' in str(pt.properties.type)
-                                 or 'Value' in str(pt.properties.type)),
+                    # BAC0 names types the bacpypes3 way: 'analog-value', 'multi-state-value'.
+                    'writable': any(k in str(pt.properties.type).lower()
+                                    for k in ('value', 'output')),
                 }
             except Exception:
                 pass
@@ -243,7 +244,9 @@ def bacnet_write(name, value):
 async def _write(name, value):
     # Awaiting the point's own setter instead of `device[name] = value`, because
     # that shortcut fires and forgets, so a refused write would look successful.
-    await DEVICE._findPoint(name, force_read=False)._set(float(value))
+    # Multi-state points accept only an int state number, analog ones take either.
+    v = float(value)
+    await DEVICE._findPoint(name, force_read=False)._set(int(v) if v.is_integer() else v)
 
 
 # ── profiles (JSON files on the server side) ─────────────────────────────
@@ -511,7 +514,7 @@ async function tick(){
   const pts=await (await fetch('/api/points')).json();
   KEYS=Object.keys(pts);
   const rows=Object.entries(pts).map(([k,v],i)=>{
-   const inp=v.writable?`<input type="number" step="any" value="${typeof v.value==='number'?v.value:''}"
+   const inp=v.writable?`<input type="number" step="any" value="${typeof v.value==='number'?v.value:parseInt(v.value)||''}"
      onfocus="editing=${i}" onblur="editing=null" onchange="writePoint(${i},this)">`:'';
    return `<tr><td>${esc(k)}</td><td style="text-align:right">${typeof v.value==='number'?fmt(v.value):esc(v.value)}</td>
     <td>${esc(v.unit||'')}</td><td>${inp}</td></tr>`});
